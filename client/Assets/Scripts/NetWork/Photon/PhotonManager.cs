@@ -456,7 +456,8 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         {
             if (isPlayerNpc)
             {
-                EnsureClassicPlayerSpawned(sync, direction, false);
+                bool hadPlayer = CharMgrs.FindPlayer(sync.Id) != null;
+                PlayerClick player = EnsureClassicPlayerSpawned(sync, direction, false);
                 ApplyClassicPositionSync(new ClassicNpcPositionSync
                 {
                     Id = sync.Id,
@@ -467,6 +468,14 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
                     IsPlayer = true
                 });
                 ApplyPendingClassicPlayerSync(sync.Id);
+                if (!hadPlayer)
+                {
+                    Debug.Log("JxClassicClient spawned player from npc min id=" + sync.Id +
+                              " mapX=" + sync.MapX +
+                              " mapY=" + sync.MapY +
+                              " name=" + sync.Name +
+                              " hasPlayerObject=" + (player != null));
+                }
                 return;
             }
 
@@ -768,29 +777,7 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
             return false;
         }
 
-        if (sync.Id == PlayerId)
-        {
-            return true;
-        }
-
-        if (!IsClassicPlayerNpcSync(sync))
-        {
-            return false;
-        }
-
-        if (PlayerId > 0 || character == null || string.IsNullOrEmpty(character.Name) || string.IsNullOrEmpty(sync.Name))
-        {
-            return false;
-        }
-
-        if (!string.Equals(sync.Name, character.Name, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        PlayerId = sync.Id;
-        CharMgrs?.RegisterMainPlayer(sync.Id, sync.Name);
-        return true;
+        return PlayerId > 0 && sync.Id == PlayerId;
     }
 
     private bool IsClassicPlayerNpcSync(ClassicNpcSync sync)

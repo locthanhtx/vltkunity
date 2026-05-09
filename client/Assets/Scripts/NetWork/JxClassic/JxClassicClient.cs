@@ -42,6 +42,8 @@ namespace game.network.jx
         private const byte S2CNpcStand = 145;
         private const byte S2CRequestNpcFail = 155;
         private const byte S2CReplyClientPing = 174;
+        private const byte S2CSyncPlayerMap = 203;
+        private const byte S2CNpcSetPos = 206;
         private const int CipherFrameSize = 34;
         private const int AccountBeginSize = 32;
 
@@ -69,10 +71,12 @@ namespace game.network.jx
         private uint clientKey;
         private readonly object worldEventLock = new();
         private readonly Queue<ClassicWorldEvent> worldEvents = new();
+        private readonly Queue<byte[]> decodedPackets = new();
         private readonly SemaphoreSlim sendLock = new(1, 1);
         private readonly object npcSyncLock = new();
         private readonly HashSet<int> fullNpcIds = new();
         private readonly Dictionary<int, byte> fullNpcKinds = new();
+        private readonly HashSet<int> knownPlayerIds = new();
         private readonly Dictionary<int, int> requestedNpcTicks = new();
         private readonly HashSet<byte> loggedUnhandledWorldProtocols = new();
         private const int NpcRequestRetryMs = 450;
@@ -80,6 +84,7 @@ namespace game.network.jx
         private const int MaxQueuedWorldEvents = 8192;
         private bool worldReceiveLoopRunning;
         private bool cpLockSent;
+        private int currentPlayerId;
 
         public bool IsConnected => tcpClient != null && tcpClient.Connected;
 
@@ -341,6 +346,11 @@ namespace game.network.jx
 
         private async Task<byte[]> ReadPacketAsync(int timeoutMs)
         {
+            if (decodedPackets.Count > 0)
+            {
+                return decodedPackets.Dequeue();
+            }
+
             byte[] lengthBytes = await ReadExactAsync(2, timeoutMs);
             ushort messageSize = BitConverter.ToUInt16(lengthBytes, 0);
 
@@ -351,7 +361,112 @@ namespace game.network.jx
 
             byte[] payload = await ReadExactAsync(messageSize - 2, timeoutMs);
             EncodeDecode(payload, ref serverKey);
-            return payload;
+            EnqueueDecodedPackets(payload);
+            return decodedPackets.Count > 0 ? decodedPackets.Dequeue() : Array.Empty<byte>();
+        }
+
+        private void EnqueueDecodedPackets(byte[] payload)
+        {
+            if (payload == null || payload.Length == 0)
+            {
+                return;
+            }
+
+            int offset = 0;
+            int packetCount = 0;
+            byte firstProtocol = payload[0];
+
+            while (offset < payload.Length)
+            {
+                byte protocol = payload[offset];
+                int packetSize = GetS2CFixedPacketSize(protocol);
+                int remaining = payload.Length - offset;
+
+                if (packetSize <= 0 || packetSize > remaining)
+                {
+                    byte[] packet = new byte[remaining];
+                    Buffer.BlockCopy(payload, offset, packet, 0, remaining);
+                    decodedPackets.Enqueue(packet);
+                    packetCount++;
+                    break;
+                }
+
+                byte[] fixedPacket = new byte[packetSize];
+                Buffer.BlockCopy(payload, offset, fixedPacket, 0, packetSize);
+                decodedPackets.Enqueue(fixedPacket);
+                offset += packetSize;
+                packetCount++;
+            }
+
+            if (packetCount > 1)
+            {
+                Debug.Log("JxClassicClient split packet batch. first=" +
+                          JxClassicProtocol.GetS2CName(firstProtocol) + "(" + firstProtocol + ")" +
+                          " totalSize=" + payload.Length +
+                          " count=" + packetCount);
+            }
+        }
+
+        private static int GetS2CFixedPacketSize(byte protocol)
+        {
+            switch (protocol)
+            {
+                case S2CSyncClientEnd:
+                    return 9;
+                case S2CSyncCurPlayer:
+                    return 87;
+                case S2CSyncCurPlayerNormal:
+                    return 31;
+                case S2CSyncWorld:
+                    return 304;
+                case S2CSyncPlayer:
+                    return 211;
+                case S2CSyncPlayerMin:
+                    return 302;
+                case S2CSyncNpcMin:
+                    return 277;
+                case S2CSyncNpcMinPlayer:
+                    return 25;
+                case S2CNpcWalk:
+                case S2CNpcRun:
+                    return 13;
+                case S2CPing:
+                    return 5;
+                case S2CNpcStand:
+                    return 25;
+                case S2CRequestNpcFail:
+                    return 69;
+                case S2CReplyClientPing:
+                    return 9;
+                case S2CSyncPlayerMap:
+                    return 9;
+                case S2CNpcSetPos:
+                    return 25;
+                case 80: // s2c_syncobjstate
+                    return 6;
+                case 81: // s2c_syncobjdir
+                    return 6;
+                case 82: // s2c_objremove
+                    return 6;
+                case 83: // s2c_objTrapAct
+                    return 13;
+                case 84: // s2c_npcremove
+                    return 9;
+                case 89: // s2c_npcjump
+                    return 13;
+                case 92: // s2c_npcdeath
+                    return 69;
+                case 144: // s2c_npcsit
+                    return 69;
+                case 169: // s2c_npcsleepmode
+                    return 6;
+                case 204: // s2c_synconestate
+                    return 13;
+                case 205: // s2c_syncnodataeffect
+                    return 19;
+                default:
+                    return 0;
+            }
         }
 
         private async Task<byte[]> ReadExactAsync(int size)
@@ -682,6 +797,11 @@ namespace game.network.jx
                         break;
                     case S2CSyncCurPlayer:
                         ParseCurrentPlayer(packet, result, characterData);
+                        if (result.PlayerId > 0)
+                        {
+                            currentPlayerId = result.PlayerId;
+                            MarkPlayerKnown(result.PlayerId);
+                        }
                         break;
                     case S2CSyncCurPlayerNormal:
                         ParseCurrentPlayerNormal(packet, characterData);
@@ -698,6 +818,11 @@ namespace game.network.jx
                         break;
                     case S2CSyncNpc:
                         ParseNpcSync(packet, result, characterData, selectedCharacter.Name);
+                        if (result.PlayerId > 0)
+                        {
+                            currentPlayerId = result.PlayerId;
+                            MarkPlayerKnown(result.PlayerId);
+                        }
                         await HandleWorldPacketAsync(packet);
                         break;
                 }
@@ -779,6 +904,8 @@ namespace game.network.jx
                 case S2CSyncCurPlayer:
                     if (TryParseCurrentPlayerSync(packet, out ClassicCurrentPlayerSync currentPlayerSync))
                     {
+                        currentPlayerId = currentPlayerSync.Id;
+                        MarkPlayerKnown(currentPlayerSync.Id);
                         EnqueueWorldEvent(new ClassicWorldEvent
                         {
                             Type = ClassicWorldEventType.CurrentPlayerSync,
@@ -801,6 +928,7 @@ namespace game.network.jx
                 case S2CSyncPlayer:
                     if (TryParseFullPlayerSync(packet, out ClassicPlayerSync fullPlayerSync))
                     {
+                        MarkPlayerKnown(fullPlayerSync.Id);
                         EnqueueWorldEvent(new ClassicWorldEvent
                         {
                             Type = ClassicWorldEventType.PlayerFullSync,
@@ -824,6 +952,7 @@ namespace game.network.jx
                 case S2CSyncPlayerMin:
                     if (TryParseNormalPlayerSync(packet, out ClassicPlayerSync normalPlayerSync))
                     {
+                        MarkPlayerKnown(normalPlayerSync.Id);
                         EnqueueWorldEvent(new ClassicWorldEvent
                         {
                             Type = ClassicWorldEventType.PlayerNormalSync,
@@ -866,12 +995,17 @@ namespace game.network.jx
                     if (TryParseNormalNpcSync(packet, out ClassicNpcSync normalNpcSync))
                     {
                         bool hasFullNpc = TryGetFullNpcKind(normalNpcSync.Id, out byte knownKind);
+                        bool hasPlayerData = IsPlayerKnown(normalNpcSync.Id);
                         if (hasFullNpc)
                         {
                             normalNpcSync.Kind = knownKind;
                         }
+                        else if (hasPlayerData)
+                        {
+                            normalNpcSync.Kind = (byte)NPCKIND.kind_player;
+                        }
 
-                        bool isPlayerNpc = hasFullNpc && normalNpcSync.Kind == (byte)NPCKIND.kind_player;
+                        bool isPlayerNpc = normalNpcSync.Kind == (byte)NPCKIND.kind_player && (hasFullNpc || hasPlayerData);
                         if (isPlayerNpc)
                         {
                             Debug.Log("JxClassicClient << normal player-npc id=" + normalNpcSync.Id +
@@ -882,7 +1016,7 @@ namespace game.network.jx
                                       " name=" + normalNpcSync.Name);
                         }
 
-                        if (hasFullNpc)
+                        if (hasFullNpc || hasPlayerData)
                         {
                             EnqueueWorldEvent(new ClassicWorldEvent
                             {
@@ -906,6 +1040,7 @@ namespace game.network.jx
                             Type = ClassicWorldEventType.PlayerPositionSync,
                             Position = playerSync
                         });
+                        await RequestNpcFromPositionIfUnknownAsync(playerSync, packet[0]);
                     }
                     break;
 
@@ -918,6 +1053,7 @@ namespace game.network.jx
                             Type = ClassicWorldEventType.PlayerPositionSync,
                             Position = moveSync
                         });
+                        await RequestNpcFromPositionIfUnknownAsync(moveSync, packet[0]);
                     }
                     break;
 
@@ -929,6 +1065,32 @@ namespace game.network.jx
                             Type = ClassicWorldEventType.PlayerPositionSync,
                             Position = standSync
                         });
+                        await RequestNpcFromPositionIfUnknownAsync(standSync, packet[0]);
+                    }
+                    break;
+
+                case S2CSyncPlayerMap:
+                    if (TryParsePlayerMapSync(packet, out int playerMapId, out bool isInCity))
+                    {
+                        MarkPlayerKnown(playerMapId);
+                        if (!IsFullNpcKnown(playerMapId) && ShouldRequestNpc(playerMapId))
+                        {
+                            Debug.Log("JxClassicClient >> request npc from player map id=" + playerMapId +
+                                      " isInCity=" + isInCity);
+                            await RequestNpcAsync(playerMapId);
+                        }
+                    }
+                    break;
+
+                case S2CNpcSetPos:
+                    if (TryParseNpcStandSync(packet, out ClassicNpcPositionSync setPosSync))
+                    {
+                        EnqueueWorldEvent(new ClassicWorldEvent
+                        {
+                            Type = ClassicWorldEventType.PlayerPositionSync,
+                            Position = setPosSync
+                        });
+                        await RequestNpcFromPositionIfUnknownAsync(setPosSync, packet[0]);
                     }
                     break;
 
@@ -1021,7 +1183,32 @@ namespace game.network.jx
             {
                 fullNpcIds.Add(id);
                 fullNpcKinds[id] = kind;
+                if (kind == (byte)NPCKIND.kind_player)
+                {
+                    knownPlayerIds.Add(id);
+                }
                 requestedNpcTicks.Remove(id);
+            }
+        }
+
+        private void MarkPlayerKnown(int id)
+        {
+            if (id <= 0)
+            {
+                return;
+            }
+
+            lock (npcSyncLock)
+            {
+                knownPlayerIds.Add(id);
+            }
+        }
+
+        private bool IsPlayerKnown(int id)
+        {
+            lock (npcSyncLock)
+            {
+                return knownPlayerIds.Contains(id);
             }
         }
 
@@ -1055,6 +1242,32 @@ namespace game.network.jx
         {
             await SendPacketAsync(BuildRequestNpcPacket(id));
             Debug.Log("JxClassicClient >> request npc id=" + id);
+        }
+
+        private async Task RequestNpcFromPositionIfUnknownAsync(ClassicNpcPositionSync sync, byte protocol)
+        {
+            if (sync == null || sync.Id <= 0 || sync.Id == currentPlayerId || IsFullNpcKnown(sync.Id))
+            {
+                return;
+            }
+
+            if (!IsPlayerKnown(sync.Id))
+            {
+                return;
+            }
+
+            if (!ShouldRequestNpc(sync.Id))
+            {
+                return;
+            }
+
+            Debug.Log("JxClassicClient >> request npc from position id=" + sync.Id +
+                      " protocol=" + JxClassicProtocol.GetS2CName(protocol) + "(" + protocol + ")" +
+                      " mapX=" + sync.MapX +
+                      " mapY=" + sync.MapY +
+                      " running=" + sync.IsRunning +
+                      " standing=" + sync.IsStanding);
+            await RequestNpcAsync(sync.Id);
         }
 
         private async Task RetryPendingNpcRequestsAsync()
@@ -1646,6 +1859,24 @@ namespace game.network.jx
             return sync.Id != 0;
         }
 
+        private static bool TryParsePlayerMapSync(byte[] packet, out int id, out bool isInCity)
+        {
+            const int idOffset = 1;
+            const int isInCityOffset = 5;
+
+            id = 0;
+            isInCity = false;
+
+            if (packet.Length < isInCityOffset + sizeof(int))
+            {
+                return false;
+            }
+
+            id = unchecked((int)BitConverter.ToUInt32(packet, idOffset));
+            isInCity = ReadInt32OrDefault(packet, isInCityOffset, 0) != 0;
+            return id != 0;
+        }
+
         private static bool IsReasonableRoleName(string name)
         {
             if (string.IsNullOrWhiteSpace(name))
@@ -1942,15 +2173,19 @@ namespace game.network.jx
                 worldEvents.Clear();
             }
 
+            decodedPackets.Clear();
+
             lock (npcSyncLock)
             {
                 fullNpcIds.Clear();
                 fullNpcKinds.Clear();
+                knownPlayerIds.Clear();
                 requestedNpcTicks.Clear();
                 loggedUnhandledWorldProtocols.Clear();
             }
 
             cpLockSent = false;
+            currentPlayerId = 0;
         }
     }
 
