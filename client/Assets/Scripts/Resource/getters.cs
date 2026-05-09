@@ -1,12 +1,16 @@
-﻿
+
 using System;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
+using System.Security;
 using UnityEngine;
 
 namespace game
 {
     class Resource
     {
+        private static string[] externalResourceRoots;
+
 #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
         private static string ReplaceStringPath(string path)
         {
@@ -31,23 +35,84 @@ namespace game
             return new(_path);
         }
 
+        private static string[] GetExternalResourceRoots()
+        {
+            if (externalResourceRoots != null)
+            {
+                return externalResourceRoots;
+            }
+
+            System.Collections.Generic.List<string> roots = new();
+            System.IO.DirectoryInfo directory = System.IO.Directory.GetParent(UnityEngine.Application.dataPath);
+
+            for (int depth = 0; directory != null && depth < 8; depth++, directory = directory.Parent)
+            {
+                string cocosRoot = System.IO.Path.Combine(directory.FullName, "cocos_v3");
+                if (!System.IO.Directory.Exists(cocosRoot))
+                {
+                    continue;
+                }
+
+                roots.Add(System.IO.Path.Combine(cocosRoot, "Full", "SwordOnline", "_bin_v2_", "gs"));
+                roots.Add(System.IO.Path.Combine(cocosRoot, "JX1CocosMobile", "pak_file"));
+                roots.Add(System.IO.Path.Combine(cocosRoot, "pak_file", "jxmobile"));
+                roots.Add(System.IO.Path.Combine(cocosRoot, "pak_file", "jx1m"));
+                break;
+            }
+
+            externalResourceRoots = roots
+                .FindAll(System.IO.Directory.Exists)
+                .ToArray();
+
+            return externalResourceRoots;
+        }
+
+        private resource.Buffer GetExternalBufferData()
+        {
+            foreach (string root in GetExternalResourceRoots())
+            {
+                string externalPath = Resource.ReplaceStringPath(root + this.path);
+                if (!System.IO.File.Exists(externalPath))
+                {
+                    continue;
+                }
+
+                UnityEngine.Debug.Log("game.Resource >> reading external: " + this.path + " => " + externalPath);
+                return System.IO.File.ReadAllBytes(externalPath);
+            }
+
+            return new resource.Buffer();
+        }
+
+        [HandleProcessCorruptedStateExceptions]
+        [SecurityCritical]
         private resource.packageIni.ElementReference GetPackageElement()
         {
             resource.packageIni.ElementReference result = new();
-            resource.packageIni.PluginApi.v(
-                resource.Cache.resourcePackageHandler,
-                this.path,
-                ref result.id,
-                ref result.packageIndex,
-                ref result.index,
-                ref result.cacheIndex,
-                ref result.offset,
-                ref result.size
-            );
+
+            try
+            {
+                resource.packageIni.PluginApi.v(
+                    resource.Cache.resourcePackageHandler,
+                    this.path,
+                    ref result.id,
+                    ref result.packageIndex,
+                    ref result.index,
+                    ref result.cacheIndex,
+                    ref result.offset,
+                    ref result.size
+                );
+            }
+            catch (System.Exception exception)
+            {
+                UnityEngine.Debug.LogError("game.Resource >> native crash in GetPackageElement: " + this.path + "\n" + exception.Message);
+            }
 
             return result;
         }
 
+        [HandleProcessCorruptedStateExceptions]
+        [SecurityCritical]
         private resource.Buffer GetBufferData()
         {
             string localStorageFullPath = resource.dataController.Config.GetLocalStogareFullPath() + this.path;
@@ -59,30 +124,68 @@ namespace game
                 return System.IO.File.ReadAllBytes(localStorageFullPath);
             }
 
+            resource.Buffer externalBuffer = this.GetExternalBufferData();
+            if (externalBuffer.size > 0)
+            {
+                return externalBuffer;
+            }
+
+            if (resource.Cache.resourcePackageHandler == IntPtr.Zero)
+            {
+                UnityEngine.Debug.LogError("game.Resource >> package handler is null, cannot read: " + this.path);
+                return new resource.Buffer();
+            }
+
             resource.packageIni.ElementReference elementReference = this.GetPackageElement();
 
             if(elementReference.id <= 0
                 || elementReference.size <= 0)
             {
+                UnityEngine.Debug.LogWarning("game.Resource >> package element not found: " + this.path
+                    + " (id=" + elementReference.id
+                    + ", pkg=" + elementReference.packageIndex
+                    + ", idx=" + elementReference.index
+                    + ", cache=" + elementReference.cacheIndex
+                    + ", offset=" + elementReference.offset
+                    + ", size=" + elementReference.size + ")");
                 return new resource.Buffer();
             }
+
+            UnityEngine.Debug.Log("game.Resource >> reading: " + this.path
+                + " (id=" + elementReference.id
+                + ", pkg=" + elementReference.packageIndex
+                + ", idx=" + elementReference.index
+                + ", cache=" + elementReference.cacheIndex
+                + ", offset=" + elementReference.offset
+                + ", size=" + elementReference.size + ")");
 
             resource.Buffer bufferResult = new(elementReference.size);
             IntPtr bufferPointer = Marshal.AllocHGlobal(elementReference.size * sizeof(char));
 
-            resource.packageIni.PluginApi.b(
-                resource.Cache.resourcePackageHandler,
-                elementReference.id,
-                elementReference.packageIndex,
-                elementReference.index,
-                elementReference.cacheIndex,
-                elementReference.offset,
-                elementReference.size,
-                bufferPointer
-            );
+            try
+            {
+                resource.packageIni.PluginApi.b(
+                    resource.Cache.resourcePackageHandler,
+                    elementReference.id,
+                    elementReference.packageIndex,
+                    elementReference.index,
+                    elementReference.cacheIndex,
+                    elementReference.offset,
+                    elementReference.size,
+                    bufferPointer
+                );
 
-            Marshal.Copy(bufferPointer, bufferResult, 0, bufferResult.size);
-            Marshal.FreeHGlobal(bufferPointer);
+                Marshal.Copy(bufferPointer, bufferResult, 0, bufferResult.size);
+            }
+            catch (System.Exception exception)
+            {
+                UnityEngine.Debug.LogError("game.Resource >> native crash reading: " + this.path + "\n" + exception.Message);
+                bufferResult = new resource.Buffer();
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(bufferPointer);
+            }
 
             return bufferResult;
         }
@@ -142,21 +245,36 @@ namespace game
             return result;
         }
 
+        [HandleProcessCorruptedStateExceptions]
+        [SecurityCritical]
         private resource.SPR.TextureBuffer GetSprFrameRawTextureData(resource.SPR.FrameInfo _frameInfo)
         {
             int bufferLength = _frameInfo.width * _frameInfo.height * 4;
             resource.SPR.TextureBuffer bufferData = new(bufferLength);
-            IntPtr bufferPointer = Marshal.AllocHGlobal(bufferLength * sizeof(char));
+            IntPtr bufferPointer = Marshal.AllocHGlobal(bufferLength);
 
-            resource.packageIni.PluginApi.k(
-                resource.Cache.resourcePackageHandler,
-                this.path,
-                _frameInfo.frameIndex,
-                bufferPointer
-            );
+            try
+            {
+                resource.packageIni.PluginApi.k(
+                    resource.Cache.resourcePackageHandler,
+                    this.path,
+                    _frameInfo.frameIndex,
+                    bufferPointer
+                );
 
-            Marshal.Copy(bufferPointer, bufferData, 0, bufferLength);
-            Marshal.FreeHGlobal(bufferPointer);
+                Marshal.Copy(bufferPointer, bufferData, 0, bufferLength);
+            }
+            catch (System.Exception exception)
+            {
+                UnityEngine.Debug.LogError("game.Resource >> native crash reading SPR: " + this.path
+                    + " frame=" + _frameInfo.frameIndex
+                    + "\n" + exception.Message);
+                bufferData = new resource.SPR.TextureBuffer(0);
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(bufferPointer);
+            }
 
             return bufferData;
         }

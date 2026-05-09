@@ -1,5 +1,7 @@
 ﻿
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace game.resource.settings
@@ -44,45 +46,120 @@ namespace game.resource.settings
         public static MapList.MapInfo LoadMapInfo(int _mapId)
         {
             MapList.MapInfo result = new() { id = 0 };
-            resource.Ini mapListIni = Game.Resource(mapping.settings.MapList.filePath).Get<resource.Ini>();
+            resource.Buffer mapListBuffer = Game.Resource(mapping.settings.MapList.filePath).Get<resource.Buffer>();
+            resource.Ini mapListIni = new(mapListBuffer);
+            resource.Ini mapListGbkIni = new(mapListBuffer.GetString(Encoding.GetEncoding(936)));
 
             if (mapListIni.IsEmpty())
             {
                 return result;
             }
 
-            result.rootPath = mapListIni.Get<string>(mapping.settings.MapList.Section.list, string.Empty + _mapId);
+            string packageRootPath = mapListIni.Get<string>(mapping.settings.MapList.Section.list, string.Empty + _mapId);
+            string unicodeRootPath = mapListGbkIni.Get<string>(mapping.settings.MapList.Section.list, string.Empty + _mapId);
+            List<RootPathCandidate> rootPathCandidates = new();
+            AddRootPathCandidate(rootPathCandidates, unicodeRootPath, packageRootPath);
+            AddRootPathCandidate(rootPathCandidates, packageRootPath, packageRootPath);
 
-            if (result.rootPath == string.Empty)
+            if (rootPathCandidates.Count == 0)
             {
                 return result;
             }
 
-            result.rootPath = mapping.settings.MapList.resourceFolder + result.rootPath;
             result.name = formater.TCVN3.UTF8(mapListIni.Get<string>(mapping.settings.MapList.Section.list, string.Empty + _mapId + mapping.settings.MapList.Key.Suffix.name));
-            result.filePath.wor = result.rootPath + mapping.settings.MapList.WorFile.extension;
-            result.filePath.miniMapImage = result.rootPath + mapping.settings.MapList.MiniMap.imageSuffix;
 
-            { // .wor file
+            foreach (RootPathCandidate rootPath in rootPathCandidates)
+            {
+                MapList.MapInfo candidate = result;
+                candidate.rootPath = mapping.settings.MapList.resourceFolder + rootPath.packageRootPath;
+                candidate.filePath.wor = mapping.settings.MapList.resourceFolder + rootPath.fileRootPath + mapping.settings.MapList.WorFile.extension;
+                candidate.filePath.miniMapImage = mapping.settings.MapList.resourceFolder + rootPath.fileRootPath + mapping.settings.MapList.MiniMap.imageSuffix;
 
-                resource.Ini worIni = Game.Resource(result.filePath.wor).Get<resource.Ini>();
-                string rectangleLiteral = worIni.Get<string>(mapping.settings.MapList.WorFile.Section.main, mapping.settings.MapList.WorFile.Key.rect);
-
-                if (rectangleLiteral == string.Empty)
+                if (TryLoadWorRectangle(candidate.filePath.wor, out candidate.worFile.rect))
                 {
-                    return new();
+                    UnityEngine.Debug.Log("settings.MapList.LoadMapInfo resolved. mapId=" + _mapId +
+                                          " packageRoot=" + candidate.rootPath +
+                                          " fileRoot=" + mapping.settings.MapList.resourceFolder + rootPath.fileRootPath);
+                    candidate.id = _mapId;
+                    return candidate;
                 }
-
-                string[] rectangleSplited = rectangleLiteral.Split(',');
-
-                result.worFile.rect.left = (rectangleSplited.Length > mapping.settings.MapList.WorFile.Key.Rect.left) ? int.Parse(Regex.Replace(rectangleSplited[mapping.settings.MapList.WorFile.Key.Rect.left], "[^0-9-]", string.Empty)) : 0;
-                result.worFile.rect.top = (rectangleSplited.Length > mapping.settings.MapList.WorFile.Key.Rect.top) ? int.Parse(Regex.Replace(rectangleSplited[mapping.settings.MapList.WorFile.Key.Rect.top], "[^0-9-]", string.Empty)) : 0;
-                result.worFile.rect.right = (rectangleSplited.Length > mapping.settings.MapList.WorFile.Key.Rect.right) ? int.Parse(Regex.Replace(rectangleSplited[mapping.settings.MapList.WorFile.Key.Rect.right], "[^0-9-]", string.Empty)) : 0;
-                result.worFile.rect.bottom = (rectangleSplited.Length > mapping.settings.MapList.WorFile.Key.Rect.bottom) ? int.Parse(Regex.Replace(rectangleSplited[mapping.settings.MapList.WorFile.Key.Rect.bottom], "[^0-9-]", string.Empty)) : 0;
             }
 
-            result.id = _mapId;
+            UnityEngine.Debug.LogWarning("settings.MapList.LoadMapInfo failed. mapId=" + _mapId +
+                                          " candidates=" + string.Join(", ", rootPathCandidates));
+
             return result;
+        }
+
+        private sealed class RootPathCandidate
+        {
+            public string fileRootPath;
+            public string packageRootPath;
+
+            public override string ToString()
+            {
+                return fileRootPath + " => " + packageRootPath;
+            }
+        }
+
+        private static void AddRootPathCandidate(List<RootPathCandidate> rootPathCandidates, string fileRootPath, string packageRootPath)
+        {
+            if (string.IsNullOrEmpty(fileRootPath))
+            {
+                return;
+            }
+
+            if (string.IsNullOrEmpty(packageRootPath))
+            {
+                packageRootPath = fileRootPath;
+            }
+
+            foreach (RootPathCandidate candidate in rootPathCandidates)
+            {
+                if (candidate.fileRootPath == fileRootPath && candidate.packageRootPath == packageRootPath)
+                {
+                    return;
+                }
+            }
+
+            rootPathCandidates.Add(new RootPathCandidate
+            {
+                fileRootPath = fileRootPath,
+                packageRootPath = packageRootPath
+            });
+        }
+
+        private static bool TryLoadWorRectangle(string worPath, out MapInfo.WorFile.Rectangle rectangle)
+        {
+            rectangle = new();
+
+            resource.Ini worIni = Game.Resource(worPath).Get<resource.Ini>();
+            string rectangleLiteral = worIni.Get<string>(mapping.settings.MapList.WorFile.Section.main, mapping.settings.MapList.WorFile.Key.rect);
+
+            if (rectangleLiteral == string.Empty)
+            {
+                return false;
+            }
+
+            string[] rectangleSplited = rectangleLiteral.Split(',');
+
+            rectangle.left = ParseRectangleValue(rectangleSplited, mapping.settings.MapList.WorFile.Key.Rect.left);
+            rectangle.top = ParseRectangleValue(rectangleSplited, mapping.settings.MapList.WorFile.Key.Rect.top);
+            rectangle.right = ParseRectangleValue(rectangleSplited, mapping.settings.MapList.WorFile.Key.Rect.right);
+            rectangle.bottom = ParseRectangleValue(rectangleSplited, mapping.settings.MapList.WorFile.Key.Rect.bottom);
+
+            return true;
+        }
+
+        private static int ParseRectangleValue(string[] rectangleSplited, int index)
+        {
+            if (rectangleSplited.Length <= index)
+            {
+                return 0;
+            }
+
+            string value = Regex.Replace(rectangleSplited[index], "[^0-9-]", string.Empty);
+            return value == string.Empty ? 0 : int.Parse(value);
         }
 
         private class UnitTest

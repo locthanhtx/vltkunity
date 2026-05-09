@@ -4,11 +4,11 @@ namespace game.resource.mapping.settings
     struct NpcRes
     {
         public const string directoryPath = "\\settings\\npcres\\";
-        public const string stateMagicTable = "\\settings\\npcres\\×´Ì¬Í¼ÐÎ¶ÔÕÕ±í.txt";
+        public const string stateMagicTable = "\\settings\\npcres\\StatusGraphicMapping.txt";
 
         public struct Kind
         {
-            public const string filePath = NpcRes.directoryPath + "ÈËÎïÀàÐÍ.txt";
+            public const string filePath = NpcRes.directoryPath + "CharacterType.txt";
 
             public struct Header
             {
@@ -24,7 +24,7 @@ namespace game.resource.mapping.settings
                 public const string shoulder = "Shoulder";
                 public const string body = "Body";
                 public const string leftHand = "LeftHand";
-                public const string rightHand = "RightHead";
+                public const string rightHand = "RightHand";
                 public const string leftWeapon = "LeftWeapon";
                 public const string rightWeapon = "RightWeapon";
                 public const string horseFront = "HorseFront";
@@ -99,8 +99,8 @@ namespace game.resource.mapping.settings
                 public const string npcList = "NpcList";
             }
 
-            public const string sprActionPath = NpcRes.directoryPath + "ÆÕÍ¨npc×ÊÔ´.txt";
-            public const string sprPropertiesPath = NpcRes.directoryPath + "ÆÕÍ¨npc×ÊÔ´ÐÅÏ¢.txt";
+            public const string sprActionPath = NpcRes.directoryPath + "NormalNPCResources.txt";
+            public const string sprPropertiesPath = NpcRes.directoryPath + "CommonNPCResourceInfo.txt";
             public const string soundPath = NpcRes.directoryPath + "npc¶¯×÷ÉùÒô±í.txt";
             public const string shadowSuffix = "b";
         }

@@ -15,7 +15,7 @@ public class PlayerDie : MonoBehaviour
 
     public void ResetTownship()
     {
-        PhotonManager.Instance.Client().SendOperation((byte)OperationCode.DoDie, new Dictionary<byte, object>(), ExitGames.Client.Photon.SendOptions.SendReliable);
+        PhotonManager.Instance.TrySendOperation(OperationCode.DoDie, new Dictionary<byte, object>());
         onPopupClosed?.Invoke();
         Destroy(gameObject);
     }

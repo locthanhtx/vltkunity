@@ -62,7 +62,10 @@ public class NpcClick : MonoBehaviour, ICharacterObj
 
     public void SyncNpcHP()
     {
-        Debug.Log("CurrentHPCur ---" + CurrentHPCur + "CurrentHPMax---" + CurrentHPMax);
+        if (controller == null)
+        {
+            return;
+        }
 
         float HPPecent = CalculateHPPercentage(CurrentHPCur, CurrentHPMax) * 100;
         controller.SetHealthPercent((int)HPPecent);
@@ -101,7 +104,7 @@ public class NpcClick : MonoBehaviour, ICharacterObj
             controller.SetNpcDeclareLine(this.npcType + 2);
 
             this.dir = dir;
-            controller.SetDirection(this.dir);
+            controller.SyncDirection(this.dir);
 
             this.mapX = mapX;
             this.mapY = mapY;
@@ -119,7 +122,7 @@ public class NpcClick : MonoBehaviour, ICharacterObj
 
             if (this.kind == NPCKIND.kind_normal)
             {
-                controller.SetHealthPercent((this.HPCur / this.HPMax) * 100);
+                controller.SetHealthPercent((int)(CalculateHPPercentage(this.HPCur, this.HPMax) * 100));
                 controller.SetCamp(MapCampClient(this.cam));
                 controller.SetSeries(MapSeriesClient(this.series));
             }
@@ -145,7 +148,7 @@ public class NpcClick : MonoBehaviour, ICharacterObj
                 { (byte)ParamterCode.Id, npcId},
                 { (byte)ParamterCode.SkillId, 53},
             };
-            PhotonManager.Instance.Client().SendOperation((byte)OperationCode.NpcSkill, opParameters, ExitGames.Client.Photon.SendOptions.SendReliable);
+            PhotonManager.Instance.TrySendOperation(OperationCode.NpcSkill, opParameters);
         }
         else
         {
@@ -160,7 +163,7 @@ public class NpcClick : MonoBehaviour, ICharacterObj
             {
                 { (byte)ParamterCode.Id, npcId},
             };
-            PhotonManager.Instance.Client().SendOperation((byte)OperationCode.NpcQuery, opParameters, ExitGames.Client.Photon.SendOptions.SendReliable);
+            PhotonManager.Instance.TrySendOperation(OperationCode.NpcQuery, opParameters);
         }
     }
 

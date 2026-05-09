@@ -26,7 +26,7 @@ namespace game.resource.mapping.settings
         public const string magicattrib = directoryPath + "magicattrib.txt";
 
         public const string goldEquip = directoryPath + "goldequip.txt";
-        public const string goldEquipRes = directoryPath + "goldequipres.txt";
+        public const string goldEquipRes = "\\settings\\item\\GolditemRes.txt";
         public const string magicattrib_ge = directoryPath + "magicattrib_ge.txt";
         public const string magicScript = directoryPath + "magicscript.txt";
         public const string mask = directoryPath + "mask.txt";

@@ -6,6 +6,29 @@ namespace game.resource.settings.npcres
 {
     class Initialize
     {
+        private static readonly Dictionary<string, int> KindColumnIndex = new()
+        {
+            { mapping.settings.NpcRes.Kind.Header.characterName, 0 },
+            { mapping.settings.NpcRes.Kind.Header.characterType, 1 },
+            { mapping.settings.NpcRes.Kind.Header.resFilePath, 2 },
+            { mapping.settings.NpcRes.Kind.Header.partFileName, 3 },
+            { mapping.settings.NpcRes.Kind.Header.weaponActionTab1, 4 },
+            { mapping.settings.NpcRes.Kind.Header.weaponActionTab2, 5 },
+            { mapping.settings.NpcRes.Kind.Header.actionRenderOrderTab, 6 },
+            { mapping.settings.NpcRes.Kind.Header.head, 7 },
+            { mapping.settings.NpcRes.Kind.Header.hair, 8 },
+            { mapping.settings.NpcRes.Kind.Header.shoulder, 9 },
+            { mapping.settings.NpcRes.Kind.Header.body, 10 },
+            { mapping.settings.NpcRes.Kind.Header.leftHand, 11 },
+            { mapping.settings.NpcRes.Kind.Header.rightHand, 12 },
+            { mapping.settings.NpcRes.Kind.Header.leftWeapon, 13 },
+            { mapping.settings.NpcRes.Kind.Header.rightWeapon, 14 },
+            { mapping.settings.NpcRes.Kind.Header.horseFront, 15 },
+            { mapping.settings.NpcRes.Kind.Header.horseMiddle, 16 },
+            { mapping.settings.NpcRes.Kind.Header.horseBack, 17 },
+            { mapping.settings.NpcRes.Kind.Header.mantle, 18 },
+        };
+
         public Initialize()
         {
             npcres.AttribModify.Initialize();
@@ -51,14 +74,76 @@ namespace game.resource.settings.npcres
             Dictionary<string, string> result = new();
 
             List<string> headerKey = _kindTable.GetHeaderKeyList();
-            int rowIndex = _kindTable.FindRowIndex(mapping.settings.NpcRes.Kind.Header.characterName, _characterName);
+            int rowIndex = FindCharacterRowIndex(_kindTable, _characterName);
+
+            if (rowIndex <= 0)
+            {
+                UnityEngine.Debug.LogError("NpcRes character row missing: " + _characterName);
+                return result;
+            }
 
             foreach (string key in headerKey)
             {
                 result.Add(key, _kindTable.Get<string>(key, rowIndex));
             }
 
+            foreach (KeyValuePair<string, int> canonicalColumn in KindColumnIndex)
+            {
+                string value = _kindTable.Get<string>(canonicalColumn.Value, rowIndex);
+                if (string.IsNullOrEmpty(value))
+                {
+                    continue;
+                }
+
+                result[canonicalColumn.Key] = value;
+            }
+
             return result;
+        }
+
+        private static int FindCharacterRowIndex(resource.Table table, string characterName)
+        {
+            int rowIndex = table.FindRowIndex(mapping.settings.NpcRes.Kind.Header.characterName, characterName);
+            if (rowIndex > 0)
+            {
+                return rowIndex;
+            }
+
+            for (int index = 1; index < table.RowCount; index++)
+            {
+                if (table.Get<string>(0, index).CompareTo(characterName) == 0)
+                {
+                    return index;
+                }
+            }
+
+            if (characterName.CompareTo(mapping.settings.NpcRes.Kind.CharacterName.mainMan) == 0 && table.RowCount > 1)
+            {
+                return 1;
+            }
+
+            if (characterName.CompareTo(mapping.settings.NpcRes.Kind.CharacterName.mainLady) == 0 && table.RowCount > 2)
+            {
+                return 2;
+            }
+
+            return -1;
+        }
+
+        private static string GetKindTableValue(resource.Table kindTable, string canonicalHeader, int rowIndex)
+        {
+            string value = kindTable.Get<string>(canonicalHeader, rowIndex);
+            if (!string.IsNullOrEmpty(value))
+            {
+                return value;
+            }
+
+            if (KindColumnIndex.TryGetValue(canonicalHeader, out int columnIndex))
+            {
+                return kindTable.Get<string>(columnIndex, rowIndex);
+            }
+
+            return string.Empty;
         }
 
         private static Dictionary<string, resource.Table> GetSpecialCharacterTable(Dictionary<string, string> _headerMapping)
@@ -68,6 +153,11 @@ namespace game.resource.settings.npcres
 
             foreach(string indexTabFileHeader in allTabFileHeader)
             {
+                if (IsOptionalSpecialPartTable(indexTabFileHeader))
+                {
+                    continue;
+                }
+
                 if(_headerMapping.ContainsKey(indexTabFileHeader) == false)
                 {
                     UnityEngine.Debug.LogError(indexTabFileHeader);
@@ -87,6 +177,12 @@ namespace game.resource.settings.npcres
             }
 
             return result;
+        }
+
+        private static bool IsOptionalSpecialPartTable(string tableHeader)
+        {
+            return tableHeader.CompareTo(mapping.settings.NpcRes.Kind.Header.shoulder) == 0 ||
+                   tableHeader.CompareTo(mapping.settings.NpcRes.Kind.Header.mantle) == 0;
         }
 
         private static Dictionary<string, resource.Ini> GetSpecialCharacterIni(Dictionary<string, string> _headerMapping)
@@ -147,16 +243,16 @@ namespace game.resource.settings.npcres
 
         private static Dictionary<string, settings.npcres.Structures.PartSprInfo> GetSpecialShadowAnimationMapping(resource.Table _kindTable, game.resource.Table _shadowTable, string _specialName)
         {
-            int kindRowIndex = _kindTable.FindRowIndex(mapping.settings.NpcRes.Kind.Header.characterName, _specialName);
-            string resourceDirectory = _kindTable.Get<string>(mapping.settings.NpcRes.Kind.Header.resFilePath, kindRowIndex);
+            Dictionary<string, string> characterMapping = Initialize.GetSpecialCharacterMapping(_kindTable, _specialName);
+            characterMapping.TryGetValue(mapping.settings.NpcRes.Kind.Header.resFilePath, out string resourceDirectory);
 
-            if(resourceDirectory == null)
+            if(string.IsNullOrEmpty(resourceDirectory))
             {
                 UnityEngine.Debug.LogError(_specialName);
                 return new();
             }
 
-            int specialRowIndex = _shadowTable.FindRowIndex(mapping.settings.NpcRes.Kind.Header.characterName, _specialName);
+            int specialRowIndex = FindCharacterRowIndex(_shadowTable, _specialName);
 
             if(specialRowIndex < 0)
             {
@@ -224,8 +320,8 @@ namespace game.resource.settings.npcres
 
             for (int rowIndex = 3; rowIndex < _kindTable.RowCount; rowIndex++)
             {
-                string characterName = _kindTable.Get<string>(mapping.settings.NpcRes.Kind.Header.characterName, rowIndex);
-                string sprDirectoryPath = _kindTable.Get<string>(mapping.settings.NpcRes.Kind.Header.resFilePath, rowIndex);
+                string characterName = GetKindTableValue(_kindTable, mapping.settings.NpcRes.Kind.Header.characterName, rowIndex);
+                string sprDirectoryPath = GetKindTableValue(_kindTable, mapping.settings.NpcRes.Kind.Header.resFilePath, rowIndex);
 
                 if(actionKeyIndexer.ContainsKey(characterName) == false)
                 {

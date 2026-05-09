@@ -1,4 +1,5 @@
 ﻿
+using System;
 using System.Collections.Generic;
 using System.Text;
 using static game.resource.settings.NpcRes;
@@ -477,7 +478,7 @@ namespace game.resource.map
                 return; 
             }
 
-            map.Surface.NodeGridChanged nodeGridSurfaceChanged = map.Surface.Update(this.currentOriginPosition, centralOrigin, this.textureConfig.radiusHorizontalVisibility, this.textureConfig.radiusVerticalVisibility);
+            map.Surface.NodeGridChanged nodeGridSurfaceChanged = map.Surface.Update(this.currentOriginPosition, centralOrigin, this.textureConfig.radiusHorizontalVisibility, this.textureConfig.radiusVerticalVisibility, this.textureConfig.nodePrefetchRadius);
             map.Element nodeElementsParsed = null;
 
             {
@@ -645,7 +646,7 @@ namespace game.resource.map
                                 "map: " + asset.originPosition.top + ", " + asset.originPosition.left + ", " + asset.order,
                                 asset.originPosition,
                                 gridPosition,
-                                Encoding.GetEncoding(1252).GetString(asset.texturePathBuffer),
+                                DecodeTexturePath(asset.texturePathBuffer),
                                 asset.textureFrame,
                                 orderNumber
                             ));
@@ -778,6 +779,22 @@ namespace game.resource.map
 
             this.cacheGridTextures.Clear();
             this.cacheStaticNpc.Clear();
+        }
+
+        private static string DecodeTexturePath(byte[] texturePathBuffer)
+        {
+            if (texturePathBuffer == null || texturePathBuffer.Length == 0)
+            {
+                return string.Empty;
+            }
+
+            int length = Array.IndexOf(texturePathBuffer, (byte)0);
+            if (length < 0)
+            {
+                length = texturePathBuffer.Length;
+            }
+
+            return Encoding.GetEncoding(1252).GetString(texturePathBuffer, 0, length);
         }
 
         private void MainThread_AddObj(Preparing.Command.AddObj _command) => this.textureThread.PushCommand(new Textures.Command.AddObj(_command.obj));

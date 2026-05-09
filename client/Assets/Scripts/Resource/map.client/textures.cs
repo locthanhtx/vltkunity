@@ -602,11 +602,19 @@ namespace game.resource.map
                 elementData.texture = textureList.ToArray();
                 elementData.obstacle = obstacleList.ToArray();
 
+                UnityEngine.Debug.Log("game.resource.map.Textures parsed nodes. root=" + _command.mapRootPath +
+                                      " nodes=" + _command.nodeList.Length +
+                                      " textures=" + elementData.texture.Length +
+                                      " obstacles=" + elementData.obstacle.Length);
                 this.preparingThread.PushNodeElements(elementData);
             }
             else
             {
                 map.Element elementData = map.Parse.NodeElements(_command.mapRootPath, _command.nodeList, _command.mapConfig);
+                UnityEngine.Debug.Log("game.resource.map.Textures parsed nodes. root=" + _command.mapRootPath +
+                                      " nodes=" + _command.nodeList.Length +
+                                      " textures=" + elementData.texture.Length +
+                                      " obstacles=" + elementData.obstacle.Length);
                 this.preparingThread.PushNodeElements(elementData);
             }
         }
@@ -753,7 +761,6 @@ namespace game.resource.map
 
             this.ownedByGrid[gridPosition.gridTop][gridPosition.gridLeft].Add(newGameObject);
         }
-
         private void Command_RemoveGridDestroyGameObjects(List<UnityEngine.GameObject> _gameObjects)
         {
             foreach (UnityEngine.GameObject gameObject in _gameObjects)

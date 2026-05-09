@@ -126,3 +126,7 @@ E:\JXMobile\jxol-server\JX.Database\obj\Debug\JX.Database.csproj.CoreCompileInpu
 E:\JXMobile\jxol-server\JX.Database\obj\Debug\JX.Database.csproj.CopyComplete
 E:\JXMobile\jxol-server\JX.Database\obj\Debug\JX.Database.dll
 E:\JXMobile\jxol-server\JX.Database\obj\Debug\JX.Database.pdb
+D:\WorkSpace\Games\jx1_mobile\vltkunity\server\JX.Database\obj\Debug\JX.Database.csproj.AssemblyReference.cache
+D:\WorkSpace\Games\jx1_mobile\vltkunity\server\JX.Database\obj\Debug\JX.Database.csproj.CoreCompileInputs.cache
+D:\WorkSpace\Games\jx1_mobile\vltkunity\server\JX.Database\obj\Debug\JX.Database.dll
+D:\WorkSpace\Games\jx1_mobile\vltkunity\server\JX.Database\obj\Debug\JX.Database.pdb

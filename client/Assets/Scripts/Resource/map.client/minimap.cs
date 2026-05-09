@@ -79,6 +79,16 @@ namespace game.resource.map
         {
             UnityEngine.Sprite sprite = Game.Resource(mapInfo.filePath.miniMapImage).Get<UnityEngine.Sprite>();
 
+            if (sprite == null)
+            {
+                this.compRect.sizeDelta = UnityEngine.Vector2.zero;
+                this.compImage.sprite = null;
+                this.xRatio = 0;
+                this.yRatio = 0;
+                UnityEngine.Debug.LogWarning("game.resource.map.MiniMap missing image: " + mapInfo.filePath.miniMapImage);
+                return;
+            }
+
             this.compRect.sizeDelta = new UnityEngine.Vector2(sprite.texture.width, sprite.texture.height);
             this.compImage.sprite = sprite;
 

@@ -31,7 +31,7 @@ public class GameClickObj : BaseMonoBehaviour
             {
                 { (byte)ParamterCode.Id, id},
             };
-            PhotonManager.Instance.Client().SendOperation((byte)OperationCode.PickItem, opParameters, ExitGames.Client.Photon.SendOptions.SendReliable);
+            PhotonManager.Instance.TrySendOperation(OperationCode.PickItem, opParameters);
         }
     }
 }

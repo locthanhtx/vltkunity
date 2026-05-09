@@ -10,6 +10,7 @@ public class Download : BaseMonoBehaviour
     public Slider totalProgress;
 
     private game.resource.DataController dataController;
+    private bool isEnteringGame;
 
     private void Start()
     {
@@ -19,20 +20,27 @@ public class Download : BaseMonoBehaviour
 
         Debug.Log("game.resource.DataController >> full storage path: " + game.resource.dataController.Config.GetLocalStogareFullPath());
 
-//        StartCoroutine(this.dataController.Fetch());
+        StartCoroutine(this.dataController.Fetch());
     }
 
     private void Update()
     {
-//        if (this.dataController.IsCompleted() == true)
+        if (!this.isEnteringGame && this.dataController.IsCompleted() == true)
         {
             this.curentProgress.value = 1;
             this.totalProgress.value = 1;
+            this.isEnteringGame = true;
 
-            Game.Initialize();
+            if (Game.Initialize())
+            {
+                Debug.Log("Update is completed. Entering the login scene");
+                SceneManager.LoadScene(ConfigGame.characterScreen);
+            }
+            else
+            {
+                Debug.LogError("Download completed, but game resource initialization failed.");
+            }
 
-            Debug.Log("Update is completed. Entering the login scene");
-            SceneManager.LoadScene(ConfigGame.characterScreen);
             return;
         }
 

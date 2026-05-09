@@ -6,8 +6,81 @@ namespace game.resource.settings.npcres.special
 {
     class Getters
     {
+        private static readonly Dictionary<string, int> WeaponActionColumnIndex = new()
+        {
+            { mapping.settings.NpcRes.WeaponAction.fightStand, 1 },
+            { mapping.settings.NpcRes.WeaponAction.normalStand1, 2 },
+            { mapping.settings.NpcRes.WeaponAction.normalStand2, 3 },
+            { mapping.settings.NpcRes.WeaponAction.fightWalk, 4 },
+            { mapping.settings.NpcRes.WeaponAction.normalWalk, 5 },
+            { mapping.settings.NpcRes.WeaponAction.fightRun, 6 },
+            { mapping.settings.NpcRes.WeaponAction.normalRun, 7 },
+            { mapping.settings.NpcRes.WeaponAction.wound, 8 },
+            { mapping.settings.NpcRes.WeaponAction.die, 9 },
+            { mapping.settings.NpcRes.WeaponAction.attack1, 10 },
+            { mapping.settings.NpcRes.WeaponAction.attack2, 11 },
+            { mapping.settings.NpcRes.WeaponAction.magic, 12 },
+            { mapping.settings.NpcRes.WeaponAction.sitDown, 13 },
+            { mapping.settings.NpcRes.WeaponAction.junpFly, 14 },
+        };
+
+        private static int EquipTypeToTableRow(int equipType)
+        {
+            return equipType + 1;
+        }
+
+        private static List<string> DefaultPartGroup(string _partMember)
+        {
+            if (_partMember.CompareTo(NpcRes.PartGroup.head) == 0)
+            {
+                return new()
+                {
+                    NpcRes.Part.head,
+                    NpcRes.Part.hair,
+                };
+            }
+
+            if (_partMember.CompareTo(NpcRes.PartGroup.body) == 0)
+            {
+                return new()
+                {
+                    NpcRes.Part.shoulder,
+                    NpcRes.Part.body,
+                    NpcRes.Part.leftHand,
+                    NpcRes.Part.rightHand,
+                };
+            }
+
+            if (_partMember.CompareTo(NpcRes.PartGroup.weapon) == 0)
+            {
+                return new()
+                {
+                    NpcRes.Part.leftWeapon,
+                    NpcRes.Part.rightWeapon,
+                };
+            }
+
+            if (_partMember.CompareTo(NpcRes.PartGroup.horse) == 0)
+            {
+                return new()
+                {
+                    NpcRes.Part.horseFront,
+                    NpcRes.Part.horseMiddle,
+                    NpcRes.Part.horseBack,
+                };
+            }
+
+            return new();
+        }
+
         public static List<string> PartGroup(Dictionary<string, resource.Table> _tableHeaderMapping, string _partMember)
         {
+            List<string> defaultPartGroup = DefaultPartGroup(_partMember);
+            if (defaultPartGroup.Count > 0)
+            {
+                return defaultPartGroup;
+            }
+
             if (_tableHeaderMapping.ContainsKey(mapping.settings.NpcRes.Kind.Header.partFileName) == false)
             {
                 UnityEngine.Debug.LogError(mapping.settings.NpcRes.Kind.Header.partFileName);
@@ -93,7 +166,27 @@ namespace game.resource.settings.npcres.special
                 }
             }
 
-            return weaponActionTable.Get<string>(_weaponAction, _rowIndex);
+            int rowIndex = EquipTypeToTableRow(_rowIndex);
+            string animationName = weaponActionTable.Get<string>(_weaponAction, rowIndex);
+            if (!string.IsNullOrEmpty(animationName))
+            {
+                return animationName;
+            }
+
+            if (WeaponActionColumnIndex.TryGetValue(_weaponAction, out int columnIndex))
+            {
+                animationName = weaponActionTable.Get<string>(columnIndex, rowIndex);
+                if (!string.IsNullOrEmpty(animationName))
+                {
+                    return animationName;
+                }
+            }
+
+            UnityEngine.Debug.LogWarning("NpcRes special animation missing. action=" + _weaponAction +
+                                         " equipType=" + _rowIndex +
+                                         " tableRow=" + rowIndex +
+                                         " riding=" + _riding);
+            return string.Empty;
         }
 
         public static string AnimationName(string _specialType, bool _riding, string _weaponAction, int _rowIndex)
@@ -189,7 +282,8 @@ namespace game.resource.settings.npcres.special
             }
 
             resource.Table sprTable = _tableMapping[_partName];
-            string sprFile = sprTable.Get<string>(_animationName, _rowIndex);
+            int rowIndex = EquipTypeToTableRow(_rowIndex);
+            string sprFile = sprTable.Get<string>(_animationName, rowIndex);
 
             if (sprFile.Length <= 0)
             {
@@ -230,14 +324,17 @@ namespace game.resource.settings.npcres.special
 
             if (_propertiesMapping.ContainsKey(_partName) == false)
             {
-                return new()
+                settings.npcres.Structures.PartSprInfo fallbackResult = new()
                 {
                     sprFullPath = sprFile,
                 };
+
+                FillMissingSprProperties(ref fallbackResult);
+                return fallbackResult;
             }
 
             resource.Table sprPropertiesTable = _propertiesMapping[_partName];
-            string sprPropertiesString = sprPropertiesTable.Get<string>(_animationName, _rowIndex);
+            string sprPropertiesString = sprPropertiesTable.Get<string>(_animationName, rowIndex);
             settings.npcres.Structures.PartSprInfo result = new()
             {
                 sprFullPath = sprFile,
@@ -252,14 +349,15 @@ namespace game.resource.settings.npcres.special
 
             if (sprPropertiesVector.Length >= mapping.settings.NpcRes.SprPropertiesIndexer.directionCount + 1)
             {
-                result.directionCount = int.Parse(Regex.Replace(sprPropertiesVector[mapping.settings.NpcRes.SprPropertiesIndexer.directionCount], "[^0-9-]", string.Empty));
+                result.directionCount = int.Parse("0" + Regex.Replace(sprPropertiesVector[mapping.settings.NpcRes.SprPropertiesIndexer.directionCount], "[^0-9-]", string.Empty));
             }
 
             if (sprPropertiesVector.Length >= mapping.settings.NpcRes.SprPropertiesIndexer.intervalRatio + 1)
             {
-                result.intervalRatio = int.Parse(Regex.Replace(sprPropertiesVector[mapping.settings.NpcRes.SprPropertiesIndexer.intervalRatio], "[^0-9-]", string.Empty));
+                result.intervalRatio = int.Parse("0" + Regex.Replace(sprPropertiesVector[mapping.settings.NpcRes.SprPropertiesIndexer.intervalRatio], "[^0-9-]", string.Empty));
             }
 
+            FillMissingSprProperties(ref result);
             return result;
         }
 
@@ -297,6 +395,51 @@ namespace game.resource.settings.npcres.special
             return new();
         }
 
+        private static void FillMissingSprProperties(ref settings.npcres.Structures.PartSprInfo sprInfo)
+        {
+            if (string.IsNullOrEmpty(sprInfo.sprFullPath))
+            {
+                return;
+            }
+
+            if (sprInfo.frameCount > 0 && sprInfo.directionCount > 0 && sprInfo.intervalRatio > 0)
+            {
+                return;
+            }
+
+            try
+            {
+                resource.SPR.Info realSprInfo = Game.Resource(sprInfo.sprFullPath).Get<resource.SPR.Info>();
+
+                if (realSprInfo != null)
+                {
+                    if (sprInfo.frameCount <= 0)
+                    {
+                        sprInfo.frameCount = realSprInfo.frameCount;
+                    }
+
+                    if (sprInfo.directionCount <= 0)
+                    {
+                        sprInfo.directionCount = realSprInfo.directionCount;
+                    }
+
+                    if (sprInfo.intervalRatio <= 0)
+                    {
+                        sprInfo.intervalRatio = realSprInfo.interval;
+                    }
+                }
+            }
+            catch (System.Exception exception)
+            {
+                UnityEngine.Debug.LogWarning("NpcRes special SPR info fallback failed: " + sprInfo.sprFullPath + " " + exception.Message);
+            }
+
+            if (sprInfo.frameCount > 0 && sprInfo.directionCount > 0 && sprInfo.intervalRatio <= 0)
+            {
+                sprInfo.intervalRatio = 1;
+            }
+        }
+
         public static npcres.Structures.PartAnimation PartAnimation(string _specialType, string _animationName, string _partName, int _direction, int _rowIndex, int _speed)
         {
             if (_rowIndex < 0)
@@ -306,7 +449,12 @@ namespace game.resource.settings.npcres.special
 
             settings.npcres.Structures.PartSprInfo partSprInfo = special.Getters.PartSprInfo(_specialType, _partName, _animationName, _rowIndex);
 
-            if (partSprInfo.frameCount <= 0)
+            if (partSprInfo.frameCount <= 0 || partSprInfo.directionCount <= 0)
+            {
+                return new();
+            }
+
+            if (partSprInfo.directionCount <= 0)
             {
                 return new();
             }
@@ -314,6 +462,11 @@ namespace game.resource.settings.npcres.special
             npcres.Structures.PartAnimation result = new();
             result.sprPath = partSprInfo.sprFullPath;
             result.framePerDirection = partSprInfo.frameCount / partSprInfo.directionCount;
+            if (result.framePerDirection <= 0)
+            {
+                return new();
+            }
+
             result.frameBegin = (ushort)(result.framePerDirection * (_direction - 1));
             result.frameEnd = (ushort)(result.frameBegin + result.framePerDirection - 1);
             result.framePerSeconds = _speed * partSprInfo.intervalRatio;

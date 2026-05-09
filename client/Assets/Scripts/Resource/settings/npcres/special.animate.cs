@@ -162,6 +162,10 @@ namespace game.resource.settings.npcres.special
         public Dictionary<string, npcres.Structures.PartAnimation> SyncDirection(int _direction)
         {
             settings.npcres.Structures.PartSprInfo partSprInfo = special.Getters.PartSprInfo(this.characterType, NpcRes.PartGroup.body, this.animation, this.partGroupRowIndex.body);
+            if (partSprInfo.directionCount <= 0)
+            {
+                return new();
+            }
 
             _direction = (_direction + (32 / partSprInfo.directionCount)) / (64 / partSprInfo.directionCount);
             if (_direction >= partSprInfo.directionCount)
@@ -314,7 +318,16 @@ namespace game.resource.settings.npcres.special
             return this.ResetAllPartAnimation();
         }
 
-        public void SetSpeed(int speed) => this.playerSpeed = speed;
+        public Dictionary<string, npcres.Structures.PartAnimation> SetSpeed(int speed)
+        {
+            if (this.playerSpeed == speed)
+            {
+                return new();
+            }
+
+            this.playerSpeed = speed;
+            return this.ResetAllPartAnimation();
+        }
 
 
     }

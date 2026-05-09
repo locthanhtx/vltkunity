@@ -10,14 +10,29 @@ namespace game.scene
 {
     public class World : UnityEngine.MonoBehaviour
     {
+        private const string ClassicPreviewNoMapPipelineKey = "CLASSIC_PREVIEW_NO_MAP_PIPELINE";
+        private const string ClassicPreviewMiniMapWorldKey = "CLASSIC_PREVIEW_MINIMAP_WORLD";
+
         private scene.world.Camera mainCamera;
         private resource.settings.NpcRes.Special mainPlayer;
         private resource.Map map;
+        private readonly Dictionary<resource.settings.npcres.Controller, SmoothMoveState> smoothMoves = new();
+        private readonly List<resource.settings.npcres.Controller> completedSmoothMoves = new();
 
         ////////////////////////////////////////////////////////////////////////////////
         private int currentFixedUpdateFps;
         private bool isRuningMainPlayerAction;
         ////////////////////////////////////////////////////////////////////////////////
+
+        private sealed class SmoothMoveState
+        {
+            public resource.settings.npcres.Controller controller;
+            public resource.map.Position start;
+            public resource.map.Position target;
+            public float startedAt;
+            public float duration;
+            public bool followCamera;
+        }
 
 
         private void Start()
@@ -68,6 +83,7 @@ namespace game.scene
             //                _wordGame.GetUserInterface().viewportItem);
 
             playerMain.InitCharacter(PhotonManager.Instance.PlayerId, mainPlayer, PlayerChatHandler, PlayerCallNpcHandler);
+            game.network.jx.JxClassicMovement.EnsureBaseSpeed(mainPlayer);
 
             NotificationOpenMap();
         }
@@ -82,12 +98,23 @@ namespace game.scene
         }
         void NotificationOpenMap()
         {
-            PhotonManager.Instance.Client().SendOperation((byte)OperationCode.WorldLoaded, new Dictionary<byte, object>(),
-                ExitGames.Client.Photon.SendOptions.SendReliable);
+            if (PhotonManager.Instance != null &&
+                PhotonManager.Instance.Client() != null &&
+                PhotonManager.Instance.IsConnected())
+            {
+                PhotonManager.Instance.TrySendOperation(OperationCode.WorldLoaded, new Dictionary<byte, object>());
+            }
         }
 
         private void Update()
         {
+            this.UpdateSmoothMoves();
+
+            if (this.map == null)
+            {
+                return;
+            }
+
             this.map.Update();
         }
 
@@ -273,10 +300,31 @@ namespace game.scene
 
         public void EnterMap(int mapId, resource.map.Position position)
         {
+            this.smoothMoves.Clear();
             this.mainPlayer.SetMapPosition(position);
+
+            if (UnityEngine.PlayerPrefs.GetInt(ClassicPreviewNoMapPipelineKey, 0) == 1)
+            {
+                this.mainCamera.SetPosition(this.mainPlayer.GetCameraPosition());
+                UnityEngine.Debug.Log("World.EnterMap classic preview no-map pipeline. mapId=" + mapId +
+                                      " top=" + position.top +
+                                      " left=" + position.left);
+                return;
+            }
+
             this.map.HideNpc(this.mainPlayer);
-            this.map.SetMapId(mapId);
+            if (!this.map.SetMapId(mapId))
+            {
+                UnityEngine.Debug.LogError("World.EnterMap failed. mapId=" + mapId +
+                                           " top=" + position.top +
+                                           " left=" + position.left);
+                return;
+            }
+
             this.map.AddDynamicNpc(this.mainPlayer);
+
+            UnityEngine.PlayerPrefs.DeleteKey(ClassicPreviewMiniMapWorldKey);
+
             this.map.SetPosition(position);
             this.mainCamera.SetPosition(this.mainPlayer.GetCameraPosition());
 
@@ -289,11 +337,32 @@ namespace game.scene
 
         public void Teleport(game.resource.map.Position position)
         {
-            this.map.SetPosition(position);
-            this.mainPlayer.SetMapPosition(position);
-            this.mainCamera.SetPosition(this.mainPlayer.GetCameraPosition());
-            
-            MainCanvas.instance.MiniMap.SetMapPosition(position);
+            if (this.mainPlayer != null)
+            {
+                this.smoothMoves.Remove(this.mainPlayer);
+            }
+
+            this.ApplyControllerPosition(this.mainPlayer, position, true);
+        }
+
+        public void MoveMainPlayerTo(game.resource.map.Position position, float duration, int snapDistance = 768)
+        {
+            this.MoveControllerTo(this.mainPlayer, position, duration, true, snapDistance);
+        }
+
+        public void MoveNpcTo(game.resource.settings.npcres.Controller npc, game.resource.map.Position position, float duration, int snapDistance = 768)
+        {
+            this.MoveControllerTo(npc, position, duration, false, snapDistance);
+        }
+
+        public void StopMainPlayerMove()
+        {
+            this.StopControllerMove(this.mainPlayer, true);
+        }
+
+        public void StopNpcMove(game.resource.settings.npcres.Controller npc)
+        {
+            this.StopControllerMove(npc, false);
         }
 
         public void AddStaticNpc(resource.settings.NpcRes.Special specialNpc) => this.map.AddStaticNpc(specialNpc);
@@ -308,7 +377,118 @@ namespace game.scene
         public void RemoveObj(resource.settings.objres.Controller obj) => this.map.HideObj(obj);
 
         public void RemoveNpc(game.resource.settings.npcres.Controller npc) => this.map.HideNpc(npc);
-        public void UpdateNpc(game.resource.settings.npcres.Controller npc, int top, int left) => this.map.UpdateNpc(npc, top, left);
+        public void UpdateNpc(game.resource.settings.npcres.Controller npc, int top, int left)
+        {
+            if (npc != null)
+            {
+                this.smoothMoves.Remove(npc);
+            }
+
+            this.map.UpdateNpc(npc, top, left);
+        }
+
+        private void MoveControllerTo(
+            game.resource.settings.npcres.Controller controller,
+            game.resource.map.Position position,
+            float duration,
+            bool followCamera,
+            int snapDistance)
+        {
+            if (controller == null || position == null)
+            {
+                return;
+            }
+
+            resource.map.Position current = controller.GetMapPosition();
+            if (duration <= 0f || current.CalculateDistance(position) > snapDistance)
+            {
+                this.smoothMoves.Remove(controller);
+                this.ApplyControllerPosition(controller, position, followCamera);
+                return;
+            }
+
+            this.smoothMoves[controller] = new SmoothMoveState
+            {
+                controller = controller,
+                start = current,
+                target = new resource.map.Position(position),
+                startedAt = UnityEngine.Time.time,
+                duration = duration,
+                followCamera = followCamera
+            };
+        }
+
+        private void StopControllerMove(game.resource.settings.npcres.Controller controller, bool followCamera)
+        {
+            if (controller == null)
+            {
+                return;
+            }
+
+            this.smoothMoves.Remove(controller);
+            this.ApplyControllerPosition(controller, controller.GetMapPosition(), followCamera);
+        }
+
+        private void UpdateSmoothMoves()
+        {
+            if (this.smoothMoves.Count == 0)
+            {
+                return;
+            }
+
+            this.completedSmoothMoves.Clear();
+            foreach (KeyValuePair<resource.settings.npcres.Controller, SmoothMoveState> pair in this.smoothMoves)
+            {
+                SmoothMoveState state = pair.Value;
+                float progress = state.duration <= 0f
+                    ? 1f
+                    : UnityEngine.Mathf.Clamp01((UnityEngine.Time.time - state.startedAt) / state.duration);
+
+                int top = UnityEngine.Mathf.RoundToInt(UnityEngine.Mathf.Lerp(state.start.top, state.target.top, progress));
+                int left = UnityEngine.Mathf.RoundToInt(UnityEngine.Mathf.Lerp(state.start.left, state.target.left, progress));
+                resource.map.Position position = progress >= 1f
+                    ? state.target
+                    : new resource.map.Position(top, left);
+
+                this.ApplyControllerPosition(state.controller, position, state.followCamera);
+
+                if (progress >= 1f)
+                {
+                    this.completedSmoothMoves.Add(pair.Key);
+                }
+            }
+
+            foreach (resource.settings.npcres.Controller controller in this.completedSmoothMoves)
+            {
+                this.smoothMoves.Remove(controller);
+            }
+        }
+
+        private void ApplyControllerPosition(
+            game.resource.settings.npcres.Controller controller,
+            game.resource.map.Position position,
+            bool followCamera)
+        {
+            if (controller == null || position == null)
+            {
+                return;
+            }
+
+            controller.SetMapPosition(position);
+
+            if (!followCamera || this.map == null)
+            {
+                return;
+            }
+
+            this.map.SetPosition(position);
+            this.mainCamera?.SetPosition(controller.GetCameraPosition());
+
+            if (MainCanvas.instance != null && MainCanvas.instance.MiniMap != null)
+            {
+                MainCanvas.instance.MiniMap.SetMapPosition(position);
+            }
+        }
 
         public resource.Map GetMap() => this.map;
     }

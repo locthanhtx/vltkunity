@@ -37,11 +37,10 @@ public class SelectSeries : MonoBehaviour
 
     private void ShowCharacter()
     {
-        _gender = 0;// gender == "man" ? 1 : 0;
-        _series = (int)NPCSERIES.series_metal; //(int)attributeSelect;
+        _gender = gender == "man" ? 1 : 0;
+        _series = Mathf.Clamp((int)attributeSelect, (int)NPCSERIES.series_metal, (int)NPCSERIES.series_earth);
         CurrentIndex = 0;
 
-        var buf = Game.Resource(CreatePlayer.CharacterSeries.special).Get<game.resource.Buffer>();
         if (isActive)
         {
             PathCharacter = CreatePlayer.CharacterSeries.GetPath(_series, _gender, 1);
@@ -77,18 +76,6 @@ public class SelectSeries : MonoBehaviour
             }
             return;
         }
-        else
-        {
-            game.resource.SPR.FrameInfo frameInfos = Game.Resource(PathCharacter).Get<game.resource.SPR.FrameInfo>(CurrentIndex);
-            Sprite sprites = Game.Resource(PathCharacter).Get<UnityEngine.Sprite>(frameInfos);
-            
-            string str = _series + "_" + _gender + "_" + (isChangeStandBy ? 0 : 1) + "_" + CurrentIndex + ".png";
-            System.IO.File.WriteAllBytes("e:\\" + str,sprites.texture.EncodeToPNG());
-
-            ++CurrentIndex;
-            return;
-        }
-
         float deta = Time.timeSinceLevelLoad - DetaCurrent;
         ushort framesIndex = (ushort)((deta * this.framePerSeconds) % this.frameLength);
 
@@ -128,12 +115,12 @@ public class SelectSeries : MonoBehaviour
 
         if (attributeSelect == NPCSERIES.series_water)
         {
-            isActive = gender == "man" ? false : true;
+            isActive = gender != "man";
         }
 
         if (attributeSelect == NPCSERIES.series_metal)
         {
-            isActive = gender == "girl" ? false : true;
+            isActive = gender != "girl";
         }
 
         ShowCharacter();

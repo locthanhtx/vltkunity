@@ -134,3 +134,7 @@ E:\JXMobile\jxol-server\Photon.JXGameServer\obj\Debug\Photon.JXGameServer.csproj
 E:\JXMobile\jxol-server\Photon.JXGameServer\obj\Debug\Photon.JXGameServer.csproj.CopyComplete
 E:\JXMobile\jxol-server\Photon.JXGameServer\obj\Debug\Photon.JXGameServer.dll
 E:\JXMobile\jxol-server\Photon.JXGameServer\obj\Debug\Photon.JXGameServer.pdb
+D:\WorkSpace\Games\jx1_mobile\vltkunity\server\Photon.JXGameServer\obj\Debug\Photon.JXGameServer.csproj.AssemblyReference.cache
+D:\WorkSpace\Games\jx1_mobile\vltkunity\server\Photon.JXGameServer\obj\Debug\Photon.JXGameServer.csproj.CoreCompileInputs.cache
+D:\WorkSpace\Games\jx1_mobile\vltkunity\server\Photon.JXGameServer\obj\Debug\Photon.JXGameServer.dll
+D:\WorkSpace\Games\jx1_mobile\vltkunity\server\Photon.JXGameServer\obj\Debug\Photon.JXGameServer.pdb

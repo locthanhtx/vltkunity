@@ -75,7 +75,7 @@ public class PlayerMain : CharacterClick, IMainPlayerClientListener
                 {
                 { (byte)ParamterCode.Id, npcClick.Id},
             };
-            PhotonManager.Instance.Client().SendOperation((byte)OperationCode.NpcQuery, opParameters, ExitGames.Client.Photon.SendOptions.SendReliable);
+            PhotonManager.Instance.TrySendOperation(OperationCode.NpcQuery, opParameters);
         }
         else
         {
@@ -173,17 +173,17 @@ public class PlayerMain : CharacterClick, IMainPlayerClientListener
     {
         if (!IsUseHorse)
         {
-            PhotonManager.Instance.Client().SendOperation((byte)OperationCode.DoSit, new Dictionary<byte, object>()
+            PhotonManager.Instance.TrySendOperation(OperationCode.DoSit, new Dictionary<byte, object>()
             {
-            }, ExitGames.Client.Photon.SendOptions.SendReliable);
+            });
         }
     }
 
     public void PlayerRun()
     {
-        PhotonManager.Instance.Client().SendOperation((byte)OperationCode.DoRun, new Dictionary<byte, object>()
+        PhotonManager.Instance.TrySendOperation(OperationCode.DoRun, new Dictionary<byte, object>()
         {
-        }, ExitGames.Client.Photon.SendOptions.SendReliable);
+        });
     }
 
     public bool PlayerSwitchHorse()
@@ -465,10 +465,10 @@ public class PlayerMain : CharacterClick, IMainPlayerClientListener
         this.item = item;
         this.bagCellIndex = bagCellIndex;
 
-        PhotonManager.Instance.Client().SendOperation((byte)OperationCode.RemoveItem, new Dictionary<byte, object>()
+        PhotonManager.Instance.TrySendOperation(OperationCode.RemoveItem, new Dictionary<byte, object>()
         {
             [(byte)ParamterCode.ItemId] = item.GetDatabaseId(),
-        }, ExitGames.Client.Photon.SendOptions.SendReliable);
+        });
     }
 
     public void SyncRemoveItem()
@@ -481,11 +481,11 @@ public class PlayerMain : CharacterClick, IMainPlayerClientListener
 
     public void ChangeEquip(uint itemId, bool isEquip)
     {
-        PhotonManager.Instance.Client().SendOperation((byte)OperationCode.AutoEquip, new Dictionary<byte, object>()
+        PhotonManager.Instance.TrySendOperation(OperationCode.AutoEquip, new Dictionary<byte, object>()
         {
             [(byte)ParamterCode.ItemId] = itemId,
             [(byte)ParamterCode.IsEquip] = isEquip,
-        }, ExitGames.Client.Photon.SendOptions.SendReliable);
+        });
     }
 
     public Dictionary<ushort, PlayerSkill> playerSkills() => PhotonManager.Instance.GetPlayerSkill();
@@ -508,7 +508,10 @@ public class PlayerMain : CharacterClick, IMainPlayerClientListener
             {(byte) ParamterCode.MapX, left},
             {(byte) ParamterCode.MapY, top * 2},
         };
-        PhotonManager.Instance.Client().SendOperation((byte)OperationCode.DoMove, opParameters, ExitGames.Client.Photon.SendOptions.SendReliable);
+        if (!PhotonManager.Instance.TrySendOperation(OperationCode.DoMove, opParameters))
+        {
+            PhotonManager.Instance.world?.Teleport(new game.resource.map.Position(top, left));
+        }
     }
 
     public Identification.Camp MapCampClient(string camp)

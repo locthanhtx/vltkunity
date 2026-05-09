@@ -217,12 +217,16 @@ namespace game.resource.map
             return result;
         }
 
-        public static Surface.NodeGridChanged Update(map.Position _oldOriginPosition, map.Position _newOriginPosition, int _radiusHorizontalVisibility, int _radiusVerticalVisibility)
+        public static Surface.NodeGridChanged Update(map.Position _oldOriginPosition, map.Position _newOriginPosition, int _radiusHorizontalVisibility, int _radiusVerticalVisibility, int _nodePrefetchRadius = 0)
         {
             Surface.NodeGridChanged result;
 
-            result.grid = Surface.UpdateGrid(_oldOriginPosition, _newOriginPosition, _radiusHorizontalVisibility, _radiusVerticalVisibility);
-            result.node = Surface.UpdateNode(_oldOriginPosition, _newOriginPosition, _radiusHorizontalVisibility, _radiusVerticalVisibility);
+            int prefetchRadius = _nodePrefetchRadius < 0 ? 0 : _nodePrefetchRadius;
+            int paddedRadiusHorizontalVisibility = _radiusHorizontalVisibility + prefetchRadius * map.Static.nodeMapDimension;
+            int paddedRadiusVerticalVisibility = _radiusVerticalVisibility + prefetchRadius * map.Static.nodeMapDimension;
+
+            result.grid = Surface.UpdateGrid(_oldOriginPosition, _newOriginPosition, paddedRadiusHorizontalVisibility, paddedRadiusVerticalVisibility);
+            result.node = Surface.UpdateNode(_oldOriginPosition, _newOriginPosition, paddedRadiusHorizontalVisibility, paddedRadiusVerticalVisibility);
 
             return result;
         }

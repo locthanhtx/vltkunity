@@ -29,7 +29,7 @@ public class ChatButton : MonoBehaviour
                 {
                 { (byte)ParamterCode.Id, NpcId},
                 };
-            PhotonManager.Instance.Client().SendOperation((byte)OperationCode.NpcQuery, opParameters, ExitGames.Client.Photon.SendOptions.SendReliable);
+            PhotonManager.Instance.TrySendOperation(OperationCode.NpcQuery, opParameters);
         }
     }
 

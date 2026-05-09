@@ -110,3 +110,7 @@ E:\JXMobile\jxol-server\Photon.ShareLibrary\obj\Debug\Photon.ShareLibrary.csproj
 E:\JXMobile\jxol-server\Photon.ShareLibrary\obj\Debug\Photon.ShareLibrary.csproj.CopyComplete
 E:\JXMobile\jxol-server\Photon.ShareLibrary\obj\Debug\Photon.ShareLibrary.dll
 E:\JXMobile\jxol-server\Photon.ShareLibrary\obj\Debug\Photon.ShareLibrary.pdb
+D:\WorkSpace\Games\jx1_mobile\vltkunity\server\Photon.ShareLibrary\obj\Debug\Photon.ShareLibrary.csproj.AssemblyReference.cache
+D:\WorkSpace\Games\jx1_mobile\vltkunity\server\Photon.ShareLibrary\obj\Debug\Photon.ShareLibrary.csproj.CoreCompileInputs.cache
+D:\WorkSpace\Games\jx1_mobile\vltkunity\server\Photon.ShareLibrary\obj\Debug\Photon.ShareLibrary.dll
+D:\WorkSpace\Games\jx1_mobile\vltkunity\server\Photon.ShareLibrary\obj\Debug\Photon.ShareLibrary.pdb

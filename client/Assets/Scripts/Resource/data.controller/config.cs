@@ -7,7 +7,7 @@ namespace game.resource.dataController
     {
         public static string GetHostingControlationAddress()
         {
-            return "http://154.26.129.47/jx";
+            return "http://157.66.80.25/data/";
         }
 
         public static string GetLocalStorageDirectoryName()

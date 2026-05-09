@@ -10,10 +10,14 @@ namespace game.resource
     {
         private readonly Dictionary<string, Dictionary<string, string>> mapping; // section => key => value
 
-        public Ini(resource.Buffer _buffer)
+        public Ini(resource.Buffer _buffer) : this(_buffer.GetString())
+        {
+        }
+
+        public Ini(string _literalData)
         {
             this.mapping = new Dictionary<string, Dictionary<string, string>>();
-            this.Initialize(_buffer.GetString());
+            this.Initialize(_literalData ?? string.Empty);
         }
 
         private void Initialize(string _literalData)

@@ -1,7 +1,7 @@
 using game.network;
+using Photon.ShareLibrary.Constant;
 using Photon.ShareLibrary.Handlers;
 using System.Collections.Generic;
-using UnityEditor.Experimental.GraphView;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
@@ -48,7 +48,7 @@ public class MainCanvas : MonoBehaviour
 
         TopBar = PanelSafeArea.transform.Find("TopBar").gameObject;
 
-        world = GetComponent<game.scene.World>();
+        ResolveWorld();
         joybase = new UnityEngine.Vector2(variableJoystick.getHandle().position.x, variableJoystick.getHandle().position.z);
     }
 
@@ -63,8 +63,11 @@ public class MainCanvas : MonoBehaviour
     /// <summary>
     /// Sync data after syncTime
     /// </summary>
+    private const float ClassicMoveSendInterval = game.network.jx.JxClassicMovement.MoveSendInterval;
+
     bool isMove = false;
     private UnityEngine.Vector2 moveDirection;
+    private float nextClassicMoveSendTime;
 
     /// <summary>
     /// Call move to service.
@@ -73,11 +76,14 @@ public class MainCanvas : MonoBehaviour
     {
         if (variableJoystick.Horizontal != 0 || variableJoystick.Vertical != 0)
         {
-            var joycurrent = new UnityEngine.Vector2(variableJoystick.getHandle().position.x, variableJoystick.getHandle().position.z);
-            var distance = UnityEngine.Vector2.Distance(joybase, joycurrent);
-            if (distance > 0.25)
+            UnityEngine.Vector2 direction = new UnityEngine.Vector2(variableJoystick.Horizontal, variableJoystick.Vertical);
+            if (direction.sqrMagnitude > 0.01f)
             {
-                moveDirection = variableJoystick.Direction * distance;
+                moveDirection = direction.normalized;
+            }
+            else
+            {
+                moveDirection = Vector2.zero;
             }
         }
         else
@@ -90,25 +96,133 @@ public class MainCanvas : MonoBehaviour
     {
         if (moveDirection != Vector2.zero)
         {
-            isMove = true;
-            var playerPosition = world.GetMainPlayer().GetMapPosition();
-            playerPosition.top += (int)moveDirection.x;
-            playerPosition.left += (int)moveDirection.y;
+            if (!ResolveWorld() || world.GetMainPlayer() == null)
+            {
+                return;
+            }
 
-            PlayerMain.instance.SynCharMove(playerPosition.left, playerPosition.top);
+            isMove = true;
+            PhotonManager.Instance.SetClassicLocalMovementActive(true);
+            if (Time.time < nextClassicMoveSendTime)
+            {
+                return;
+            }
+
+            nextClassicMoveSendTime = Time.time + ClassicMoveSendInterval;
+
+            var playerPosition = world.GetMainPlayer().GetMapPosition();
+            int direction = JoystickDirectionToClassicDir(moveDirection);
+            game.network.jx.JxClassicMovement.EnsureBaseSpeed(world.GetMainPlayer());
+            int speed = Mathf.Max(
+                PhotonManager.Instance.ClassicRunSpeed,
+                game.network.jx.JxClassicMovement.GetCurrentRunSpeed(world.GetMainPlayer()));
+            int distance = game.network.jx.JxClassicMovement.GetRunTargetDistance(speed);
+
+            int targetLeft = playerPosition.left + ((game.resource.settings.skill.Static.g_DirCos(direction, 64) * distance) >> 10);
+            int targetMapY = (playerPosition.top * 2) + ((game.resource.settings.skill.Static.g_DirSin(direction, 64) * distance) >> 10);
+            int targetTop = targetMapY / 2;
+            var targetPosition = new game.resource.map.Position(targetTop, targetLeft);
+
+            world.GetMainPlayer().SyncDirection(direction);
+            NpcAction.DoAction(world.GetMainPlayer(), NPCCMD.do_run);
+            world.MoveMainPlayerTo(
+                targetPosition,
+                game.network.jx.JxClassicMovement.GetDuration(playerPosition, targetPosition, speed),
+                512);
+            PlayerMain.instance.SynCharMove(targetLeft, targetTop);
         }
         else
         {
             if (isMove)
             {
                 isMove = false;
-                PhotonManager.Instance.Client().SendOperation((byte)OperationCode.StopMove, new Dictionary<byte, object>(), ExitGames.Client.Photon.SendOptions.SendReliable);
+                nextClassicMoveSendTime = 0f;
+                if (ResolveWorld() && world.GetMainPlayer() != null)
+                {
+                    world.StopMainPlayerMove();
+                    NpcAction.DoAction(world.GetMainPlayer(), NPCCMD.do_stand);
+                    var playerPosition = world.GetMainPlayer().GetMapPosition();
+                    PhotonManager.Instance.SetClassicLocalMovementActive(false);
+                    PhotonManager.Instance.TrySendOperation(OperationCode.StopMove, new Dictionary<byte, object>
+                    {
+                        {(byte) ParamterCode.MapId, 0 },
+                        {(byte) ParamterCode.MapX, playerPosition.left},
+                        {(byte) ParamterCode.MapY, playerPosition.top * 2},
+                    });
+                }
+                else
+                {
+                    PhotonManager.Instance.SetClassicLocalMovementActive(false);
+                    PhotonManager.Instance.TrySendOperation(OperationCode.StopMove, new Dictionary<byte, object>());
+                }
             }
             else
             {
                 //Debug.Log("KO SYNC DI CHUYEN");
             }
         }
+    }
+
+    private bool ResolveWorld()
+    {
+        if (world != null)
+        {
+            return true;
+        }
+
+        world = PhotonManager.Instance.world;
+        if (world == null)
+        {
+            world = FindObjectOfType<game.scene.World>();
+        }
+
+        return world != null;
+    }
+
+    private static int JoystickDirectionToClassicDir(UnityEngine.Vector2 direction)
+    {
+        float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg;
+        if (angle < 0f)
+        {
+            angle += 360f;
+        }
+
+        if (angle >= 337.5f || angle < 22.5f)
+        {
+            return 48;
+        }
+
+        if (angle < 67.5f)
+        {
+            return 40;
+        }
+
+        if (angle < 112.5f)
+        {
+            return 32;
+        }
+
+        if (angle < 157.5f)
+        {
+            return 24;
+        }
+
+        if (angle < 202.5f)
+        {
+            return 16;
+        }
+
+        if (angle < 247.5f)
+        {
+            return 8;
+        }
+
+        if (angle < 292.5f)
+        {
+            return 0;
+        }
+
+        return 56;
     }
 
     /// <summary>

@@ -39,3 +39,7 @@ E:\JXMobile\jxol-server\Photon.JXLoginServer\obj\Debug\Photon.JXLoginServer.cspr
 E:\JXMobile\jxol-server\Photon.JXLoginServer\obj\Debug\Photon.JXLoginServer.csproj.CopyComplete
 E:\JXMobile\jxol-server\Photon.JXLoginServer\obj\Debug\Photon.JXLoginServer.dll
 E:\JXMobile\jxol-server\Photon.JXLoginServer\obj\Debug\Photon.JXLoginServer.pdb
+D:\WorkSpace\Games\jx1_mobile\vltkunity\server\Photon.JXLoginServer\obj\Debug\Photon.JXLoginServer.csproj.AssemblyReference.cache
+D:\WorkSpace\Games\jx1_mobile\vltkunity\server\Photon.JXLoginServer\obj\Debug\Photon.JXLoginServer.csproj.CoreCompileInputs.cache
+D:\WorkSpace\Games\jx1_mobile\vltkunity\server\Photon.JXLoginServer\obj\Debug\Photon.JXLoginServer.dll
+D:\WorkSpace\Games\jx1_mobile\vltkunity\server\Photon.JXLoginServer\obj\Debug\Photon.JXLoginServer.pdb

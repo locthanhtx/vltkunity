@@ -170,8 +170,7 @@ public class OpenChat : BaseMonoBehaviour
                         {(byte) ParamterCode.Message,message},
                         {(byte) ParamterCode.ActionId,playerChatSelect},
                     };
-        PhotonManager.Instance.Client().SendOperation((byte)OperationCode.DoChat, opParameters, 
-            ExitGames.Client.Photon.SendOptions.SendReliable);
+        PhotonManager.Instance.TrySendOperation(OperationCode.DoChat, opParameters);
 
         AddMessageOut(name, message);
         ScrollToBottom();

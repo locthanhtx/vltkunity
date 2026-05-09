@@ -91,6 +91,6 @@ public class NpcDialog : MonoBehaviour
                 { (byte)ParamterCode.Data,  index }
         };
 
-        PhotonManager.Instance.client.SendOperation((byte)OperationCode.NpcSelect, opParameters, ExitGames.Client.Photon.SendOptions.SendReliable);
+        PhotonManager.Instance.TrySendOperation(OperationCode.NpcSelect, opParameters);
     }
 }

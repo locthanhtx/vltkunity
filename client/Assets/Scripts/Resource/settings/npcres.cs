@@ -90,7 +90,7 @@ namespace game.resource.settings
             public void SetWeaponItemDefault() => this.shape.InValidPartList(this.animate.special.SetHandItemDefault());
             public void SetHorseItemDefault() => this.shape.InValidPartList(this.animate.special.SetHorseItemDefault());
 
-            public void SetSpeed(int _speed) => this.animate.special.SetSpeed(_speed);
+            public void SetSpeed(int _speed) => this.shape.InValidPartList(this.animate.special.SetSpeed(_speed));
 
             ////////////////////////////////////////////////////////////////////////////////
 

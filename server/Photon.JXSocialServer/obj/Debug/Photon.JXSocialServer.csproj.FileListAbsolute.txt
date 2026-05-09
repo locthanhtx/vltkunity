@@ -39,3 +39,7 @@ E:\JXMobile\jxol-server\Photon.JXSocialServer\obj\Debug\Photon.JXSocialServer.cs
 E:\JXMobile\jxol-server\Photon.JXSocialServer\obj\Debug\Photon.JXSocialServer.csproj.CopyComplete
 E:\JXMobile\jxol-server\Photon.JXSocialServer\obj\Debug\Photon.JXSocialServer.dll
 E:\JXMobile\jxol-server\Photon.JXSocialServer\obj\Debug\Photon.JXSocialServer.pdb
+D:\WorkSpace\Games\jx1_mobile\vltkunity\server\Photon.JXSocialServer\obj\Debug\Photon.JXSocialServer.csproj.AssemblyReference.cache
+D:\WorkSpace\Games\jx1_mobile\vltkunity\server\Photon.JXSocialServer\obj\Debug\Photon.JXSocialServer.csproj.CoreCompileInputs.cache
+D:\WorkSpace\Games\jx1_mobile\vltkunity\server\Photon.JXSocialServer\obj\Debug\Photon.JXSocialServer.dll
+D:\WorkSpace\Games\jx1_mobile\vltkunity\server\Photon.JXSocialServer\obj\Debug\Photon.JXSocialServer.pdb

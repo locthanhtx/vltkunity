@@ -17,6 +17,7 @@ namespace game.resource
         private map.Location location;
         private readonly map.MiniMap miniMap;
         private readonly map.Obstacle.Barrier obstacleBarrier;
+        private UnityEngine.GameObject previewBackground;
 
         private readonly map.ObjList objList;
         private readonly map.NpcList npcList;
@@ -31,7 +32,7 @@ namespace game.resource
             this.appearance = new UnityEngine.GameObject(typeof(game.resource.Map).FullName);
 
             this.info = new settings.MapList.MapInfo();
-            this.textureConfig = new map.Config.Textures(){ radiusHorizontalVisibility = 400, radiusVerticalVisibility = 300, drawGroundNode = 1, drawGroundObject = 1, drawBuilding = 1, drawTree = 1, drawObstacleGrid = 0 };
+            this.textureConfig = new map.Config.Textures(){ radiusHorizontalVisibility = 400, radiusVerticalVisibility = 300, nodePrefetchRadius = 1, drawGroundNode = 1, drawGroundObject = 1, drawBuilding = 1, drawTree = 1, drawObstacleGrid = 0 };
             this.identifyConfig = new map.Config.Identification() { npcTitle = true, npcTong = true, npcName = true, npcHealth = true, npcMapPos = false };
             this.layer = new map.Layer(this.appearance);
             this.preparingCommand = new map.Preparing();
@@ -55,6 +56,7 @@ namespace game.resource
 
         public void Release()
         {
+            this.ClearPreviewBackground();
             this.preparingCommand.Release();
             this.missileCommand.Release();
             this.npcFrame.Release();
@@ -70,6 +72,7 @@ namespace game.resource
 
         public bool SetMapId(int _mapId)
         {
+            this.ClearPreviewBackground();
             settings.MapList.MapInfo newMapInfo = settings.MapList.LoadMapInfo(_mapId);
 
             if (newMapInfo.id == 0)
@@ -88,6 +91,70 @@ namespace game.resource
             return true;
         }
 
+        private void ClearPreviewBackground()
+        {
+            if (this.previewBackground != null)
+            {
+                UnityEngine.GameObject.Destroy(this.previewBackground);
+                this.previewBackground = null;
+            }
+        }
+
+        public void ShowMiniMapWorldPreview()
+        {
+            this.ClearPreviewBackground();
+
+            UnityEngine.Sprite sprite = Game.Resource(this.info.filePath.miniMapImage).Get<UnityEngine.Sprite>();
+            bool hasMiniMapImage = sprite != null;
+            if (sprite == null)
+            {
+                sprite = CreatePreviewFallbackSprite();
+                UnityEngine.Debug.LogWarning("game.resource.Map preview minimap missing, using fallback. mapId=" + this.info.id +
+                                             " image=" + this.info.filePath.miniMapImage);
+            }
+
+            this.previewBackground = new UnityEngine.GameObject("classic-minimap-world-preview");
+            this.previewBackground.transform.SetParent(this.layer.groundNode.transform, false);
+
+            UnityEngine.SpriteRenderer renderer = this.previewBackground.AddComponent<UnityEngine.SpriteRenderer>();
+            renderer.sprite = sprite;
+            renderer.sortingOrder = -100000;
+
+            int centerTop = (this.info.worFile.rect.top + this.info.worFile.rect.bottom) * map.Static.nodeMapDimension / 2;
+            int centerLeft = (this.info.worFile.rect.left + this.info.worFile.rect.right) * map.Static.nodeMapDimension / 2;
+
+            this.previewBackground.transform.position = new UnityEngine.Vector3(centerLeft / 100f, centerTop / -100f, 0);
+            if (hasMiniMapImage)
+            {
+                this.previewBackground.transform.localScale = new UnityEngine.Vector3(16f, 16f, 1f);
+            }
+            else
+            {
+                int width = System.Math.Max(1, this.info.worFile.rect.right - this.info.worFile.rect.left + 1) * map.Static.nodeMapDimension;
+                int height = System.Math.Max(1, this.info.worFile.rect.bottom - this.info.worFile.rect.top + 1) * map.Static.nodeMapDimension;
+                this.previewBackground.transform.localScale = new UnityEngine.Vector3(width / 100f, height / 100f, 1f);
+            }
+
+            UnityEngine.Debug.Log("game.resource.Map preview loaded. mapId=" + this.info.id +
+                                  " image=" + this.info.filePath.miniMapImage +
+                                  " centerTop=" + centerTop +
+                                  " centerLeft=" + centerLeft);
+        }
+
+        private static UnityEngine.Sprite CreatePreviewFallbackSprite()
+        {
+            UnityEngine.Texture2D texture = new(1, 1);
+            texture.SetPixel(0, 0, new UnityEngine.Color32(32, 36, 42, 255));
+            texture.Apply();
+
+            return UnityEngine.Sprite.Create(
+                texture,
+                new UnityEngine.Rect(0, 0, texture.width, texture.height),
+                new UnityEngine.Vector2(0.5f, 0.5f),
+                1f
+            );
+        }
+
         public settings.MapList.MapInfo GetInfo() => this.info;
 
         public void SetTextureConfig(map.Config.Textures _mapConfig, bool clearMaptextures = true, bool clearSpecialNpc = false, bool clearNormalNpc = false) => this.preparingCommand.Reset(this.textureConfig = _mapConfig, this.info, clearMaptextures, clearSpecialNpc, clearNormalNpc);
@@ -100,7 +167,17 @@ namespace game.resource
 
         public map.Layer GetLayer() => this.layer;
 
-        public void SetPosition(map.Position _position) => this.preparingCommand.SetCentral(new map.Position(this.currentPosition = _position));
+        public void SetPosition(map.Position _position)
+        {
+            this.currentPosition = _position;
+
+            if (this.previewBackground != null)
+            {
+                return;
+            }
+
+            this.preparingCommand.SetCentral(new map.Position(this.currentPosition));
+        }
 
         public map.Position GetCurrentPosition() => this.currentPosition;
 

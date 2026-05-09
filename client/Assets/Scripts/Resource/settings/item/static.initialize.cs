@@ -1,4 +1,4 @@
-﻿
+
 using System.Collections.Generic;
 
 namespace game.resource.settings.item
@@ -13,7 +13,8 @@ namespace game.resource.settings.item
             Cache.Settings.Item.magicAttribBaseMapping = Initialize.MagicAttribParser(mapping.settings.Item.magicattrib);
             Cache.Settings.Item.goldEquipBase = Initialize.GoldEquipBaseParser(mapping.settings.Item.goldEquip);
             Cache.Settings.Item.goldMagicBase = Initialize.GoldMagicBaseParser(mapping.settings.Item.magicattrib_ge);
-            Cache.Settings.Item.goldEquipRes = Initialize.GoldEquipResParser(mapping.settings.Item.goldEquipRes);
+            //Cache.Settings.Item.goldEquipRes = Initialize.GoldEquipResParser(mapping.settings.Item.goldEquipRes); // FIXME: native crash SIGSEGV in PluginApi.b
+            Cache.Settings.Item.goldEquipRes = new System.Collections.Generic.Dictionary<int, GoldResBase>();
             //Cache.Settings.Item.magicScriptBase = Initialize.MagicScriptBaseParser(mapping.settings.Item.magicScript);
         }
 

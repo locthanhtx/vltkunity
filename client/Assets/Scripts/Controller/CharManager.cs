@@ -18,7 +18,7 @@ namespace game.scene
         void Start()
         {
             PhotonManager.Instance.SetCharClientListener(this);
-            Players.Add(PhotonManager.Instance.PlayerId, _wordGame.GetMainPlayer());
+            RegisterMainPlayer(PhotonManager.Instance.PlayerId);
         }
 
         public void ClearWorld()
@@ -83,10 +83,10 @@ namespace game.scene
                     MagicLevel = 6
                 };
 
-                PhotonManager.Instance.Client().SendOperation((byte)OperationCode.AddItem, new Dictionary<byte, object>()
+                PhotonManager.Instance.TrySendOperation(OperationCode.AddItem, new Dictionary<byte, object>()
                 {
                     [(byte)ParamterCode.Data] = addItemParam.ToByteArray(),
-                }, ExitGames.Client.Photon.SendOptions.SendReliable);
+                });
             }
 */
         }
@@ -95,11 +95,60 @@ namespace game.scene
         {
             _wordGame.ChangeWorld();
             Players.Clear();
-            Players.Add(PhotonManager.Instance.PlayerId, _wordGame.GetMainPlayer());
+            RegisterMainPlayer(PhotonManager.Instance.PlayerId);
+        }
+
+        public void RegisterMainPlayer(int id, string name = null)
+        {
+            NpcRes.Special mainPlayer = _wordGame?.GetMainPlayer();
+            if (mainPlayer == null)
+            {
+                return;
+            }
+
+            List<int> keysToRemove = new();
+            foreach (KeyValuePair<int, NpcRes.Special> pair in Players)
+            {
+                if (pair.Value == mainPlayer && pair.Key != id)
+                {
+                    keysToRemove.Add(pair.Key);
+                    continue;
+                }
+
+                if (id > 0 && pair.Key == id && pair.Value != mainPlayer)
+                {
+                    _wordGame.RemoveNpc(pair.Value);
+                    keysToRemove.Add(pair.Key);
+                }
+            }
+
+            foreach (int key in keysToRemove)
+            {
+                Players.Remove(key);
+            }
+
+            Players[id] = mainPlayer;
+
+            PlayerMain mainHandler = mainPlayer.GetAppearance().parent.GetComponent<PlayerMain>();
+            if (mainHandler != null)
+            {
+                mainHandler.id = id;
+                mainHandler.controller = mainPlayer;
+                if (!string.IsNullOrEmpty(name))
+                {
+                    mainHandler.Name = name;
+                    mainPlayer.SetName(name);
+                }
+            }
         }
 
         public CharacterClick FindPlayer(int id)
         {
+            if (id > 0 && id == PhotonManager.Instance.PlayerId)
+            {
+                RegisterMainPlayer(id);
+            }
+
             if (Players.ContainsKey(id))
                 return Players[id].GetAppearance().parent.GetComponent<CharacterClick>();
             else
@@ -110,6 +159,13 @@ namespace game.scene
         {
             if (Players.ContainsKey(id))
             {
+                if (Players[id] == _wordGame.GetMainPlayer())
+                {
+                    Players.Remove(id);
+                    RegisterMainPlayer(PhotonManager.Instance.PlayerId);
+                    return;
+                }
+
                 _wordGame.RemoveNpc(Players[id]);
                 Players.Remove(id);
             }
@@ -129,26 +185,50 @@ namespace game.scene
 
         public PlayerClick SpwanPlayer(int id, string name, bool sex, byte dir, int mapX, int mapY)
         {
+            if (id > 0 && id == PhotonManager.Instance.PlayerId)
+            {
+                RegisterMainPlayer(id, name);
+                CharacterClick mainPlayer = FindPlayer(id);
+                if (mainPlayer != null && mainPlayer.controller != null)
+                {
+                    mainPlayer.controller.SetCharacterType(sex ? NpcRes.SpecialType.man : NpcRes.SpecialType.lady);
+                    mainPlayer.controller.SyncDirection(dir);
+                    mainPlayer.controller.SetMapPosition(mapY, mapX);
+                    game.network.jx.JxClassicMovement.EnsureBaseSpeed(mainPlayer.controller);
+                }
+
+                return mainPlayer as PlayerClick;
+            }
+
             NpcRes.Special newNpc;
+            PlayerClick handler;
 
             if (Players.ContainsKey(id))
             {
                 newNpc = Players[id];
+                handler = newNpc.GetAppearance().parent.GetComponent<PlayerClick>();
             }
             else
             {
                 newNpc = new resource.settings.NpcRes.Special();
                 newNpc.GetAppearance().parent.AddComponent<BoxCollider2D>();
-                var handler = newNpc.GetAppearance().parent.AddComponent<PlayerClick>();
+                handler = newNpc.GetAppearance().parent.AddComponent<PlayerClick>();
                 handler.id = id;
                 handler.controller = newNpc;
-
-                newNpc.SetName(name);
-                newNpc.SetCharacterType(sex ? NpcRes.SpecialType.man : NpcRes.SpecialType.lady);
-                newNpc.SetDirection(dir);
-                newNpc.SetMapPosition(mapY, mapX);
-
             }
+
+            if (handler != null)
+            {
+                handler.id = id;
+                handler.Name = name;
+                handler.controller = newNpc;
+            }
+
+            newNpc.SetName(name);
+            newNpc.SetCharacterType(sex ? NpcRes.SpecialType.man : NpcRes.SpecialType.lady);
+            newNpc.SyncDirection(dir);
+            newNpc.SetMapPosition(mapY, mapX);
+            game.network.jx.JxClassicMovement.EnsureBaseSpeed(newNpc);
 
             if (!Players.ContainsKey(id))
             {

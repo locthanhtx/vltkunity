@@ -49,31 +49,47 @@ public class TopBar : MonoBehaviour
         return (float)current / max;
     }
 
-    int HPCurrent => PhotonManager.Instance.character.CurLife;
-    int HPMax => PhotonManager.Instance.character.MaxLife;
+    private bool TryGetCharacter(out Photon.ShareLibrary.Entities.CharacterData character)
+    {
+        character = PhotonManager.Instance != null ? PhotonManager.Instance.character : null;
+        return character != null;
+    }
 
-    int MPCurrent => PhotonManager.Instance.character.CurInner;
-    int MPMax => PhotonManager.Instance.character.MaxInner;
-
-    int SPCurrent => PhotonManager.Instance.character.CurStamina;
-    int SPMax => PhotonManager.Instance.character.MaxStamina;
     public void UdpateUIHP()
     {
-        string HPPecentData = HPCurrent + "/" + HPMax;
-        float HPPecent = CalculateHPPercentage(HPCurrent, HPMax) * 100;
+        if (!TryGetCharacter(out Photon.ShareLibrary.Entities.CharacterData character))
+        {
+            SetUpHp(0, "0/0");
+            return;
+        }
+
+        string HPPecentData = character.CurLife + "/" + character.MaxLife;
+        float HPPecent = CalculateHPPercentage(character.CurLife, character.MaxLife) * 100;
         SetUpHp(HPPecent, HPPecentData);
         //controller.SetHealthPercent((int)HPPecent);
     }
     public void UdpateUIMP()
     {
-        string ManaPecentData = MPCurrent + "/" + MPMax;
-        float MPPecent = CalculateHPPercentage(MPCurrent, HPMax) * 100;
+        if (!TryGetCharacter(out Photon.ShareLibrary.Entities.CharacterData character))
+        {
+            SetUpMana(0, "0/0");
+            return;
+        }
+
+        string ManaPecentData = character.CurInner + "/" + character.MaxInner;
+        float MPPecent = CalculateHPPercentage(character.CurInner, character.MaxInner) * 100;
         SetUpMana(MPPecent, ManaPecentData);
     }
     public void UdpateUISP()
     {
-        float SpPecent = CalculateHPPercentage(SPCurrent, SPMax) * 100;
-        string StaminaPecentData = SPCurrent + "/" + SPMax;
+        if (!TryGetCharacter(out Photon.ShareLibrary.Entities.CharacterData character))
+        {
+            SetUpSatamina(0, "0/0");
+            return;
+        }
+
+        float SpPecent = CalculateHPPercentage(character.CurStamina, character.MaxStamina) * 100;
+        string StaminaPecentData = character.CurStamina + "/" + character.MaxStamina;
         SetUpSatamina(SpPecent, StaminaPecentData);
     }
     // Update is called once per frame

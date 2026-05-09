@@ -134,6 +134,10 @@ namespace game.resource.settings.npcres.normal
         public Dictionary<string, npcres.Structures.PartAnimation> SyncDirection(int _direction)
         {
             resource.Cache.Settings.NpcRes.NormalNpc.PartInfo allPartInfo = resource.Cache.Settings.NpcRes.NormalNpc.animationMapping[this.npcResType][this.actionName];
+            if (allPartInfo.fullBody.directionCount <= 0)
+            {
+                return new();
+            }
 
             var nTempDir = (_direction + (32 / allPartInfo.fullBody.directionCount)) / (64 / allPartInfo.fullBody.directionCount);
             if (nTempDir >= allPartInfo.fullBody.directionCount)

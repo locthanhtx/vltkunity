@@ -529,7 +529,8 @@ namespace game.resource.settings.npcres
         {
             this.titleValue = title;
 
-            if(this.titleValue.CompareTo(string.Empty) == 0)
+            if(this.titleValue.CompareTo(string.Empty) == 0
+                || this.IsDuplicateOfName(this.titleValue))
             {
                 if(this.titleShape != null)
                 {
@@ -560,8 +561,10 @@ namespace game.resource.settings.npcres
         {
             this.tongNameValue = name;
             this.tongTitleValue = title;
+            string tongText = this.tongNameValue + this.tongTitleValue;
 
-            if(this.tongNameValue.CompareTo(string.Empty) == 0)
+            if(this.tongNameValue.CompareTo(string.Empty) == 0
+                || this.IsDuplicateOfName(tongText))
             {
                 this.tongTitleValue = string.Empty;
 
@@ -579,13 +582,13 @@ namespace game.resource.settings.npcres
                 {
                     this.tongShape = new Identification.TextObject("npc.tong");
                     this.tongShape.GetAppearance().transform.SetParent(this.parent.transform, false);
-                    this.tongShape.SetText(this.tongNameValue + this.tongTitleValue);
+                    this.tongShape.SetText(tongText);
                     this.SetCamp(this.campValue);
                     this.UpdateLayout();
                 }
                 else
                 {
-                    this.tongShape.SetText(this.tongNameValue + this.tongTitleValue);
+                    this.tongShape.SetText(tongText);
                     this.SetCamp(this.campValue);
                 }
             }
@@ -637,7 +640,31 @@ namespace game.resource.settings.npcres
 
                 this.nameShape.SetText(this.nameValue);
                 this.SetCamp(this.campValue);
+
+                if (this.IsDuplicateOfName(this.tongNameValue + this.tongTitleValue))
+                {
+                    this.SetTong(string.Empty, string.Empty);
+                }
+
+                if (this.IsDuplicateOfName(this.titleValue))
+                {
+                    this.SetTitle(string.Empty);
+                }
             }
+        }
+
+        private bool IsDuplicateOfName(string text)
+        {
+            return string.IsNullOrEmpty(this.nameValue) == false
+                && string.IsNullOrEmpty(text) == false
+                && string.Compare(this.NormalizeLabelText(this.nameValue), this.NormalizeLabelText(text), System.StringComparison.OrdinalIgnoreCase) == 0;
+        }
+
+        private string NormalizeLabelText(string text)
+        {
+            return string.IsNullOrEmpty(text)
+                ? string.Empty
+                : text.Replace(" ", string.Empty).Trim();
         }
 
         public void SetSeries(Identification.Series series)

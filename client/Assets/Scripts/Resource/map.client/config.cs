@@ -18,6 +18,11 @@ namespace game.resource.map
             public int radiusVerticalVisibility;
 
             /**
+            *	@brief số node/region cần preload thêm quanh vùng nhìn hiện tại
+            */
+            public int nodePrefetchRadius;
+
+            /**
             *	@brief vẽ nền đất của bản đồ
             *	@param 1: có
             *	@param 0: không
