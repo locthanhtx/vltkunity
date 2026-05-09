@@ -51,12 +51,13 @@ namespace game.resource.settings.skill
             if (nX1 == nX2 && nY1 == nY2)
                 return -1;
 
-            int nDistance = g_GetDistance(nX1, nY1, nX2, nY2);
+            int nDx = nX2 - nX1;
+            int nDy = nY2 - nY1;
+            int nDistance = (int)Math.Sqrt((nDx * nDx) + (nDy * nDy));
 
             if (nDistance == 0) return -1;
 
-            int nYLength = nY2 - nY1;
-            int nSin = (nYLength << 10) / nDistance;
+            int nSin = (nDy << 10) / nDistance;
 
 
             for (int i = 0; i < 32; i++)
@@ -66,10 +67,26 @@ namespace game.resource.settings.skill
                 nRet = i;
             }
 
-            if ((nX2 - nX1) > 0)
+            if (nRet < 0)
             {
-                nRet = 63 - nRet;
+                nRet = 0;
             }
+
+            if (g_nSin[nRet] != nSin && nRet + 1 < g_nSin.Length)
+            {
+                int nD1 = g_nSin[nRet] - nSin;
+                int nD2 = nSin - g_nSin[nRet + 1];
+                if (nD1 > nD2)
+                {
+                    nRet++;
+                }
+            }
+
+            if (nDx >= 0 && nRet != 0)
+            {
+                nRet = 64 - nRet;
+            }
+
             return nRet;
         }
 

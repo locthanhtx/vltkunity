@@ -38,6 +38,7 @@ namespace game.network.jx
         private const byte S2CSyncNpcMinPlayer = 78;
         private const byte S2CNpcWalk = 85;
         private const byte S2CNpcRun = 86;
+        private const byte S2CNpcDeath = 92;
         private const byte S2CPing = 143;
         private const byte S2CNpcStand = 145;
         private const byte S2CRequestNpcFail = 155;
@@ -430,6 +431,8 @@ namespace game.network.jx
                 case S2CNpcWalk:
                 case S2CNpcRun:
                     return 13;
+                case S2CNpcDeath:
+                    return 69;
                 case S2CPing:
                     return 5;
                 case S2CNpcStand:
@@ -454,8 +457,6 @@ namespace game.network.jx
                     return 9;
                 case 89: // s2c_npcjump
                     return 13;
-                case 92: // s2c_npcdeath
-                    return 69;
                 case 144: // s2c_npcsit
                     return 69;
                 case 169: // s2c_npcsleepmode
@@ -1066,6 +1067,17 @@ namespace game.network.jx
                             Position = standSync
                         });
                         await RequestNpcFromPositionIfUnknownAsync(standSync, packet[0]);
+                    }
+                    break;
+
+                case S2CNpcDeath:
+                    if (TryParseNpcCommandSync(packet, (byte)NPCCMD.do_death, out ClassicNpcCommandSync deathSync))
+                    {
+                        EnqueueWorldEvent(new ClassicWorldEvent
+                        {
+                            Type = ClassicWorldEventType.ActorCommandSync,
+                            Command = deathSync
+                        });
                     }
                     break;
 
@@ -1742,6 +1754,7 @@ namespace game.network.jx
             const int nameOffset = 58;
             const int factionOffset = 122;
             const int maxLifeOffset = 150;
+            const int hasDirectionOffset = 175;
             const int directionOffset = 176;
             const int currentLifeMaxOffset = 185;
             const int currentLifeOffset = 189;
@@ -1772,8 +1785,12 @@ namespace game.network.jx
                 CurrentLife = ReadPositiveInt32(packet, currentLifeOffset, 1)
             };
 
-            int direction = ReadInt32OrDefault(packet, directionOffset, 0);
-            sync.Direction = (byte)Math.Max(0, Math.Min(63, direction));
+            sync.HasDirection = packet[hasDirectionOffset] != 0;
+            if (sync.HasDirection)
+            {
+                int direction = ReadInt32OrDefault(packet, directionOffset, 0);
+                sync.Direction = (byte)Math.Max(0, Math.Min(63, direction));
+            }
 
             return sync.Id != 0;
         }
@@ -1828,7 +1845,8 @@ namespace game.network.jx
                 MapY = ReadPositiveInt32(packet, mapYOffset, 0),
                 OffsetX = ReadInt32OrDefault(packet, offXOffset, 0),
                 OffsetY = ReadInt32OrDefault(packet, offYOffset, 0),
-                IsStanding = true
+                IsStanding = true,
+                Command = (byte)NPCCMD.do_stand
             };
 
             return sync.Id != 0;
@@ -1853,7 +1871,28 @@ namespace game.network.jx
                 MapX = ReadPositiveInt32(packet, mapXOffset, 0),
                 MapY = ReadPositiveInt32(packet, mapYOffset, 0),
                 HasMoveAction = true,
-                IsRunning = isRunning
+                IsRunning = isRunning,
+                Command = (byte)(isRunning ? NPCCMD.do_run : NPCCMD.do_walk)
+            };
+
+            return sync.Id != 0;
+        }
+
+        private static bool TryParseNpcCommandSync(byte[] packet, byte command, out ClassicNpcCommandSync sync)
+        {
+            const int idOffset = 1;
+
+            sync = null;
+
+            if (packet == null || packet.Length < 5)
+            {
+                return false;
+            }
+
+            sync = new ClassicNpcCommandSync
+            {
+                Id = unchecked((int)BitConverter.ToUInt32(packet, idOffset)),
+                Command = command
             };
 
             return sync.Id != 0;
@@ -2218,7 +2257,8 @@ namespace game.network.jx
         NpcNormalSync,
         PlayerFullSync,
         PlayerNormalSync,
-        PlayerPositionSync
+        PlayerPositionSync,
+        ActorCommandSync
     }
 
     public sealed class ClassicWorldEvent
@@ -2229,6 +2269,7 @@ namespace game.network.jx
         public ClassicNpcSync Npc;
         public ClassicPlayerSync Player;
         public ClassicNpcPositionSync Position;
+        public ClassicNpcCommandSync Command;
     }
 
     public sealed class ClassicCurrentPlayerSync
@@ -2252,6 +2293,7 @@ namespace game.network.jx
         public byte Kind;
         public byte Doing;
         public byte Direction;
+        public bool HasDirection;
         public int NpcSettingIndex;
         public int Faction;
         public int Level;
@@ -2321,5 +2363,14 @@ namespace game.network.jx
         public bool HasMoveAction;
         public bool IsRunning;
         public bool IsStanding;
+        public byte Direction;
+        public bool HasDirection;
+        public byte Command;
+    }
+
+    public sealed class ClassicNpcCommandSync
+    {
+        public int Id;
+        public byte Command;
     }
 }

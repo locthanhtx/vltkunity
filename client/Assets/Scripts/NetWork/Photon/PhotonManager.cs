@@ -345,6 +345,10 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
                     case ClassicWorldEventType.PlayerPositionSync:
                         ApplyClassicPositionSync(worldEvent.Position);
                         break;
+
+                    case ClassicWorldEventType.ActorCommandSync:
+                        ApplyClassicActorCommandSync(worldEvent.Command);
+                        break;
                 }
             }
             catch (Exception exception)
@@ -441,7 +445,10 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
                 MapY = sync.MapY,
                 OffsetX = sync.OffsetX,
                 OffsetY = sync.OffsetY,
-                IsPlayer = true
+                IsPlayer = true,
+                Direction = sync.Direction,
+                HasDirection = sync.HasDirection,
+                Command = sync.Doing
             });
 
             if (hasAppearanceData && isPlayerNpc)
@@ -465,8 +472,12 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
                     MapY = sync.MapY,
                     OffsetX = sync.OffsetX,
                     OffsetY = sync.OffsetY,
-                    IsPlayer = true
+                    IsPlayer = true,
+                    Direction = sync.Direction,
+                    HasDirection = sync.HasDirection,
+                    Command = sync.Doing
                 });
+                ApplyClassicPlayerRuntimeState(player, sync, direction);
                 ApplyPendingClassicPlayerSync(sync.Id);
                 if (!hadPlayer)
                 {
@@ -486,7 +497,10 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
                 MapY = sync.MapY,
                 OffsetX = sync.OffsetX,
                 OffsetY = sync.OffsetY,
-                IsPlayer = isPlayerNpc
+                IsPlayer = isPlayerNpc,
+                Direction = sync.Direction,
+                HasDirection = sync.HasDirection,
+                Command = sync.Doing
             });
 
             NpcClick existingNpc = NpcMgrs.FindNpc(sync.Id);
@@ -501,6 +515,7 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         if (isPlayerNpc)
         {
             PlayerClick player = EnsureClassicPlayerSpawned(sync, direction, true);
+            ApplyClassicPlayerRuntimeState(player, sync, direction);
 
             ApplyPendingClassicPlayerSync(sync.Id);
             Debug.Log("JxClassicClient spawned player id=" + sync.Id +
@@ -856,12 +871,12 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
 
         if (sync.WalkSpeed > 0)
         {
-            ClassicWalkSpeed = sync.WalkSpeed;
+            ClassicWalkSpeed = JxClassicMovement.NormalizeWalkSpeed(sync.WalkSpeed);
         }
 
         if (sync.RunSpeed > 0)
         {
-            ClassicRunSpeed = sync.RunSpeed;
+            ClassicRunSpeed = JxClassicMovement.NormalizeRunSpeed(sync.RunSpeed);
         }
     }
 
@@ -921,28 +936,88 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
             npc.CurrentHPCur = Math.Max(1, sync.CurrentLife);
         }
 
-        game.resource.settings.npcres.Controller controller = npc.GetController();
+        ApplyClassicControllerRuntimeState(npc.GetController(), sync, direction);
+    }
+
+    private void ApplyClassicPlayerRuntimeState(CharacterClick player, ClassicNpcSync sync, byte direction)
+    {
+        if (player == null || sync == null)
+        {
+            return;
+        }
+
+        if (sync.CurrentLifeMax > 0 || sync.MaxLife > 0)
+        {
+            player.HPMax = Math.Max(1, sync.CurrentLifeMax > 0 ? sync.CurrentLifeMax : sync.MaxLife);
+        }
+
+        if (sync.CurrentLife > 0)
+        {
+            player.HPCur = Math.Max(1, sync.CurrentLife);
+        }
+
+        ApplyClassicControllerRuntimeState(player.controller, sync, direction, false);
+    }
+
+    private void ApplyClassicControllerRuntimeState(
+        game.resource.settings.npcres.Controller controller,
+        ClassicNpcSync sync,
+        byte direction,
+        bool applyPosition = true)
+    {
         if (controller == null)
         {
             return;
         }
 
         JxClassicMovement.EnsureBaseSpeed(controller);
-        controller.SyncDirection(direction);
 
-        if (sync.MapX > 0 && sync.MapY > 0)
+        int top = sync.MapY / 2;
+        int left = sync.MapX;
+        int resolvedDirection = sync.HasDirection ? direction : -1;
+        if (sync.MapX > 0 && sync.MapY > 0 && IsClassicMovingCommand(sync.Doing))
         {
-            float duration = JxClassicMovement.GetDuration(
-                controller.GetMapPosition(),
-                new game.resource.map.Position(sync.MapY / 2, sync.MapX),
-                sync.Doing == (byte)NPCCMD.do_run
-                    ? JxClassicMovement.GetCurrentRunSpeed(controller)
-                    : JxClassicMovement.GetCurrentWalkSpeed(controller));
-            world.MoveNpcTo(
-                controller,
-                new game.resource.map.Position(sync.MapY / 2, sync.MapX),
-                duration,
-                768);
+            int vectorDirection = ResolveClassicDirection(controller.GetMapPosition(), top, left);
+            if (vectorDirection >= 0)
+            {
+                resolvedDirection = vectorDirection;
+            }
+        }
+
+        if (resolvedDirection >= 0)
+        {
+            controller.SyncDirection(resolvedDirection);
+        }
+
+        if (applyPosition && sync.MapX > 0 && sync.MapY > 0)
+        {
+            var targetPosition = new game.resource.map.Position(top, left);
+            int moveSpeed = sync.Doing == (byte)NPCCMD.do_run
+                ? JxClassicMovement.NormalizeRunSpeed(JxClassicMovement.GetCurrentRunSpeed(controller))
+                : JxClassicMovement.NormalizeWalkSpeed(JxClassicMovement.GetCurrentWalkSpeed(controller));
+            if (IsClassicMovingCommand(sync.Doing))
+            {
+                world.MoveNpcToClassicMps(
+                    controller,
+                    sync.MapX,
+                    sync.MapY,
+                    moveSpeed,
+                    768);
+            }
+            else
+            {
+                float duration = JxClassicMovement.GetDuration(
+                    controller.GetMapPosition(),
+                    targetPosition,
+                    moveSpeed);
+                world.MoveNpcToMps(
+                    controller,
+                    sync.MapX,
+                    sync.MapY,
+                    duration,
+                    768,
+                    false);
+            }
         }
 
         if (TryGetClassicNpcCommand(sync.Doing, out NPCCMD command))
@@ -955,6 +1030,55 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
     {
         npcCommand = (NPCCMD)command;
         return command > (byte)NPCCMD.do_none && command <= (byte)NPCCMD.do_revive;
+    }
+
+    private static bool IsClassicMovingCommand(byte command)
+    {
+        return command == (byte)NPCCMD.do_run || command == (byte)NPCCMD.do_walk;
+    }
+
+    private void ApplyClassicActorCommandSync(ClassicNpcCommandSync sync)
+    {
+        if (sync == null || sync.Id == 0 || !TryGetClassicNpcCommand(sync.Command, out NPCCMD command))
+        {
+            return;
+        }
+
+        if (sync.Id == PlayerId)
+        {
+            game.resource.settings.npcres.Controller mainPlayer = world.GetMainPlayer();
+            if (mainPlayer != null)
+            {
+                NpcAction.DoAction(mainPlayer, command);
+            }
+
+            if (command == NPCCMD.do_death && character != null)
+            {
+                character.CurLife = 0;
+            }
+            return;
+        }
+
+        CharacterClick player = CharMgrs.FindPlayer(sync.Id);
+        if (player != null && player.controller != null)
+        {
+            NpcAction.DoAction(player.controller, command);
+            if (command == NPCCMD.do_death)
+            {
+                player.HPCur = 0;
+            }
+            return;
+        }
+
+        NpcClick npc = NpcMgrs.FindNpc(sync.Id);
+        if (npc != null && npc.GetController() != null)
+        {
+            NpcAction.DoAction(npc.GetController(), command);
+            if (command == NPCCMD.do_death)
+            {
+                npc.CurrentHPCur = 0;
+            }
+        }
     }
 
     private void ApplyClassicPositionSync(ClassicNpcPositionSync sync)
@@ -973,7 +1097,7 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
                                  !classicLocalMovementActive &&
                                  Time.time < classicRunEchoIgnoreUntil;
 
-            if (classicLocalMovementActive && sync.HasMoveAction)
+            if (classicLocalMovementActive)
             {
                 MapX = sync.MapX;
                 MapY = sync.MapY;
@@ -989,18 +1113,22 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
             JxClassicMovement.EnsureBaseSpeed(world.GetMainPlayer());
             ApplyClassicMoveState(world.GetMainPlayer(), top, left, sync);
 
-            var targetPosition = new game.resource.map.Position(top, left);
             int moveSpeed = sync.IsRunning
-                ? Math.Max(ClassicRunSpeed, JxClassicMovement.GetCurrentRunSpeed(world.GetMainPlayer()))
-                : Math.Max(ClassicWalkSpeed, JxClassicMovement.GetCurrentWalkSpeed(world.GetMainPlayer()));
-            float moveDuration = JxClassicMovement.GetDuration(
-                world.GetMainPlayer()?.GetMapPosition(),
-                targetPosition,
-                moveSpeed);
-            world.MoveMainPlayerTo(
-                targetPosition,
-                sync.HasMoveAction ? moveDuration : ClassicNpcNormalSyncDuration,
-                sync.HasMoveAction ? 768 : 384);
+                ? JxClassicMovement.NormalizeRunSpeed(Math.Max(ClassicRunSpeed, JxClassicMovement.GetCurrentRunSpeed(world.GetMainPlayer())))
+                : JxClassicMovement.NormalizeWalkSpeed(Math.Max(ClassicWalkSpeed, JxClassicMovement.GetCurrentWalkSpeed(world.GetMainPlayer())));
+            if (IsClassicMovingPositionSync(sync))
+            {
+                world.MoveMainPlayerToClassicMps(sync.MapX, sync.MapY, moveSpeed, 768);
+            }
+            else
+            {
+                world.MoveMainPlayerToMps(
+                    sync.MapX,
+                    sync.MapY,
+                    ClassicNpcNormalSyncDuration,
+                    384,
+                    false);
+            }
             MapX = sync.MapX;
             MapY = sync.MapY;
             return;
@@ -1011,15 +1139,28 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         {
             JxClassicMovement.EnsureBaseSpeed(player.controller);
             ApplyClassicMoveState(player.controller, top, left, sync);
-            var targetPosition = new game.resource.map.Position(top, left);
-            int moveSpeed = sync.IsRunning
-                ? JxClassicMovement.GetCurrentRunSpeed(player.controller)
-                : JxClassicMovement.GetCurrentWalkSpeed(player.controller);
-            world.MoveNpcTo(
-                player.controller,
-                targetPosition,
-                sync.HasMoveAction ? JxClassicMovement.GetDuration(player.controller.GetMapPosition(), targetPosition, moveSpeed) : ClassicNpcNormalSyncDuration,
-                768);
+            int moveSpeed = IsClassicRunPositionSync(sync)
+                ? JxClassicMovement.NormalizeRunSpeed(JxClassicMovement.GetCurrentRunSpeed(player.controller))
+                : JxClassicMovement.NormalizeWalkSpeed(JxClassicMovement.GetCurrentWalkSpeed(player.controller));
+            if (IsClassicMovingPositionSync(sync))
+            {
+                world.MoveNpcToClassicMps(
+                    player.controller,
+                    sync.MapX,
+                    sync.MapY,
+                    moveSpeed,
+                    768);
+            }
+            else
+            {
+                world.MoveNpcToMps(
+                    player.controller,
+                    sync.MapX,
+                    sync.MapY,
+                    ClassicNpcNormalSyncDuration,
+                    768,
+                    false);
+            }
             return;
         }
 
@@ -1028,15 +1169,28 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         {
             JxClassicMovement.EnsureBaseSpeed(npc.GetController());
             ApplyClassicMoveState(npc.GetController(), top, left, sync);
-            var targetPosition = new game.resource.map.Position(top, left);
-            int moveSpeed = sync.IsRunning
-                ? JxClassicMovement.GetCurrentRunSpeed(npc.GetController())
-                : JxClassicMovement.GetCurrentWalkSpeed(npc.GetController());
-            world.MoveNpcTo(
-                npc.GetController(),
-                targetPosition,
-                sync.HasMoveAction ? JxClassicMovement.GetDuration(npc.GetController().GetMapPosition(), targetPosition, moveSpeed) : ClassicNpcNormalSyncDuration,
-                768);
+            int moveSpeed = IsClassicRunPositionSync(sync)
+                ? JxClassicMovement.NormalizeRunSpeed(JxClassicMovement.GetCurrentRunSpeed(npc.GetController()))
+                : JxClassicMovement.NormalizeWalkSpeed(JxClassicMovement.GetCurrentWalkSpeed(npc.GetController()));
+            if (IsClassicMovingPositionSync(sync))
+            {
+                world.MoveNpcToClassicMps(
+                    npc.GetController(),
+                    sync.MapX,
+                    sync.MapY,
+                    moveSpeed,
+                    768);
+            }
+            else
+            {
+                world.MoveNpcToMps(
+                    npc.GetController(),
+                    sync.MapX,
+                    sync.MapY,
+                    ClassicNpcNormalSyncDuration,
+                    768,
+                    false);
+            }
         }
     }
 
@@ -1047,14 +1201,25 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
             return;
         }
 
-        int direction = ResolveClassicDirection(controller.GetMapPosition(), top, left);
+        int direction = IsClassicMovingPositionSync(sync)
+            ? ResolveClassicDirection(controller.GetMapPosition(), top, left)
+            : -1;
+        if (direction < 0 && sync.HasDirection)
+        {
+            direction = sync.Direction;
+        }
+
         JxClassicMovement.EnsureBaseSpeed(controller);
         if (direction >= 0)
         {
             controller.SyncDirection(direction);
         }
 
-        if (sync.IsStanding)
+        if (TryGetClassicNpcCommand(sync.Command, out NPCCMD command))
+        {
+            NpcAction.DoAction(controller, command);
+        }
+        else if (sync.IsStanding)
         {
             NpcAction.DoAction(controller, NPCCMD.do_stand);
         }
@@ -1064,23 +1229,22 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         }
     }
 
+    private static bool IsClassicRunPositionSync(ClassicNpcPositionSync sync)
+    {
+        return sync != null && (sync.IsRunning || sync.Command == (byte)NPCCMD.do_run);
+    }
+
+    private static bool IsClassicMovingPositionSync(ClassicNpcPositionSync sync)
+    {
+        return sync != null &&
+               (sync.HasMoveAction ||
+                sync.Command == (byte)NPCCMD.do_run ||
+                sync.Command == (byte)NPCCMD.do_walk);
+    }
+
     private static int ResolveClassicDirection(game.resource.map.Position currentPosition, int targetTop, int targetLeft)
     {
-        int targetMapY = targetTop * 2;
-        int currentMapY = currentPosition.top * 2;
-
-        int direction = game.resource.settings.skill.Static.g_GetDirIndex(
-            currentPosition.left,
-            currentMapY,
-            targetLeft,
-            targetMapY);
-
-        if (direction < 0 || direction > 63)
-        {
-            return -1;
-        }
-
-        return direction;
+        return JxClassicMovement.GetDirection(currentPosition, targetTop, targetLeft);
     }
 
     private void OnDestroy()

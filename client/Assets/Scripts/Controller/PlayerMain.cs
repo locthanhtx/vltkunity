@@ -502,15 +502,20 @@ public class PlayerMain : CharacterClick, IMainPlayerClientListener
 
     public void SynCharMove(int left, int top)
     {
+        SynCharMoveMps(left, top * 2);
+    }
+
+    public void SynCharMoveMps(int left, int mapY)
+    {
         Dictionary<byte, object> opParameters = new()
         {
             {(byte) ParamterCode.MapId, 0 },
             {(byte) ParamterCode.MapX, left},
-            {(byte) ParamterCode.MapY, top * 2},
+            {(byte) ParamterCode.MapY, mapY},
         };
         if (!PhotonManager.Instance.TrySendOperation(OperationCode.DoMove, opParameters))
         {
-            PhotonManager.Instance.world?.Teleport(new game.resource.map.Position(top, left));
+            PhotonManager.Instance.world?.TeleportMps(left, mapY);
         }
     }
 

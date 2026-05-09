@@ -103,6 +103,16 @@ public class MainCanvas : MonoBehaviour
 
             isMove = true;
             PhotonManager.Instance.SetClassicLocalMovementActive(true);
+            int direction = JoystickDirectionToClassicDir(moveDirection);
+            game.network.jx.JxClassicMovement.EnsureBaseSpeed(world.GetMainPlayer());
+            int speed = game.network.jx.JxClassicMovement.NormalizeRunSpeed(Mathf.Max(
+                PhotonManager.Instance.ClassicRunSpeed,
+                game.network.jx.JxClassicMovement.GetCurrentRunSpeed(world.GetMainPlayer())));
+
+            world.StepMainPlayerClassic(direction, speed);
+            world.GetMainPlayer().SyncDirection(direction);
+            NpcAction.DoAction(world.GetMainPlayer(), NPCCMD.do_run);
+
             if (Time.time < nextClassicMoveSendTime)
             {
                 return;
@@ -110,26 +120,17 @@ public class MainCanvas : MonoBehaviour
 
             nextClassicMoveSendTime = Time.time + ClassicMoveSendInterval;
 
-            var playerPosition = world.GetMainPlayer().GetMapPosition();
-            int direction = JoystickDirectionToClassicDir(moveDirection);
-            game.network.jx.JxClassicMovement.EnsureBaseSpeed(world.GetMainPlayer());
-            int speed = Mathf.Max(
-                PhotonManager.Instance.ClassicRunSpeed,
-                game.network.jx.JxClassicMovement.GetCurrentRunSpeed(world.GetMainPlayer()));
             int distance = game.network.jx.JxClassicMovement.GetRunTargetDistance(speed);
 
-            int targetLeft = playerPosition.left + ((game.resource.settings.skill.Static.g_DirCos(direction, 64) * distance) >> 10);
-            int targetMapY = (playerPosition.top * 2) + ((game.resource.settings.skill.Static.g_DirSin(direction, 64) * distance) >> 10);
-            int targetTop = targetMapY / 2;
-            var targetPosition = new game.resource.map.Position(targetTop, targetLeft);
+            Vector2 playerMpsPosition = world.GetMainPlayerMpsPosition();
+            Vector2 targetMpsPosition = game.network.jx.JxClassicMovement.AdvanceMpsPosition(
+                playerMpsPosition,
+                direction,
+                distance);
+            int targetLeft = Mathf.RoundToInt(targetMpsPosition.x);
+            int targetMapY = Mathf.RoundToInt(targetMpsPosition.y);
 
-            world.GetMainPlayer().SyncDirection(direction);
-            NpcAction.DoAction(world.GetMainPlayer(), NPCCMD.do_run);
-            world.MoveMainPlayerTo(
-                targetPosition,
-                game.network.jx.JxClassicMovement.GetDuration(playerPosition, targetPosition, speed),
-                512);
-            PlayerMain.instance.SynCharMove(targetLeft, targetTop);
+            PlayerMain.instance.SynCharMoveMps(targetLeft, targetMapY);
         }
         else
         {
@@ -141,13 +142,13 @@ public class MainCanvas : MonoBehaviour
                 {
                     world.StopMainPlayerMove();
                     NpcAction.DoAction(world.GetMainPlayer(), NPCCMD.do_stand);
-                    var playerPosition = world.GetMainPlayer().GetMapPosition();
+                    Vector2 playerMpsPosition = world.GetMainPlayerMpsPosition();
                     PhotonManager.Instance.SetClassicLocalMovementActive(false);
                     PhotonManager.Instance.TrySendOperation(OperationCode.StopMove, new Dictionary<byte, object>
                     {
                         {(byte) ParamterCode.MapId, 0 },
-                        {(byte) ParamterCode.MapX, playerPosition.left},
-                        {(byte) ParamterCode.MapY, playerPosition.top * 2},
+                        {(byte) ParamterCode.MapX, Mathf.RoundToInt(playerMpsPosition.x)},
+                        {(byte) ParamterCode.MapY, Mathf.RoundToInt(playerMpsPosition.y)},
                     });
                 }
                 else

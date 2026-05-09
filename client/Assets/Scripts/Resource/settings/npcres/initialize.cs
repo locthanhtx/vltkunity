@@ -61,8 +61,16 @@ namespace game.resource.settings.npcres
             }
             else
             {
-                resource.Cache.Settings.NpcRes.Shadow.mainManAnimationMapping = Initialize.GetSpecialShadowAnimationMapping(kindTable, shadowTable, mapping.settings.NpcRes.Kind.CharacterName.mainMan);
-                resource.Cache.Settings.NpcRes.Shadow.mainLadyAnimationMapping = Initialize.GetSpecialShadowAnimationMapping(kindTable, shadowTable, mapping.settings.NpcRes.Kind.CharacterName.mainLady);
+                resource.Cache.Settings.NpcRes.Shadow.mainManAnimationMapping = Initialize.GetSpecialShadowAnimationMapping(
+                    kindTable,
+                    shadowTable,
+                    mapping.settings.NpcRes.Kind.CharacterName.mainMan,
+                    resource.Cache.Settings.NpcRes.mainManTableMapping);
+                resource.Cache.Settings.NpcRes.Shadow.mainLadyAnimationMapping = Initialize.GetSpecialShadowAnimationMapping(
+                    kindTable,
+                    shadowTable,
+                    mapping.settings.NpcRes.Kind.CharacterName.mainLady,
+                    resource.Cache.Settings.NpcRes.mainLadyTableMapping);
             }
 
             resource.Cache.Settings.NpcRes.NormalNpc.animationMapping = GetNormalNpcMapping(kindTable);
@@ -241,7 +249,11 @@ namespace game.resource.settings.npcres
             return result;
         }
 
-        private static Dictionary<string, settings.npcres.Structures.PartSprInfo> GetSpecialShadowAnimationMapping(resource.Table _kindTable, game.resource.Table _shadowTable, string _specialName)
+        private static Dictionary<string, settings.npcres.Structures.PartSprInfo> GetSpecialShadowAnimationMapping(
+            resource.Table _kindTable,
+            game.resource.Table _shadowTable,
+            string _specialName,
+            Dictionary<string, resource.Table> _specialTableMapping)
         {
             Dictionary<string, string> characterMapping = Initialize.GetSpecialCharacterMapping(_kindTable, _specialName);
             characterMapping.TryGetValue(mapping.settings.NpcRes.Kind.Header.resFilePath, out string resourceDirectory);
@@ -261,10 +273,20 @@ namespace game.resource.settings.npcres
             }
 
             Dictionary<string, settings.npcres.Structures.PartSprInfo> result = new();
+            resource.Table actionHeaderTable = null;
+            if (_specialTableMapping != null)
+            {
+                _specialTableMapping.TryGetValue(mapping.settings.NpcRes.Kind.Header.rightWeapon, out actionHeaderTable);
+                if (actionHeaderTable == null)
+                {
+                    _specialTableMapping.TryGetValue(mapping.settings.NpcRes.Kind.Header.body, out actionHeaderTable);
+                }
+            }
 
+            int actionHeaderIndex = 1;
             for (int headIndex = 1; headIndex < _shadowTable.HeaderCount;)
             {
-                string ainmationName = _shadowTable.GetHeaderKey(headIndex);
+                string animationName = _shadowTable.GetHeaderKey(headIndex);
                 string sprFileName = _shadowTable.Get<string>(headIndex, specialRowIndex);
                 headIndex++;
                 string sprProperties = _shadowTable.Get<string>(headIndex, specialRowIndex);
@@ -281,7 +303,18 @@ namespace game.resource.settings.npcres
                 newSprPartInfo.directionCount = sprDirections;
                 newSprPartInfo.intervalRatio = sprInterval;
 
-                result[ainmationName] = newSprPartInfo;
+                result[animationName] = newSprPartInfo;
+
+                if (actionHeaderTable != null && actionHeaderIndex < actionHeaderTable.HeaderCount)
+                {
+                    string localActionName = actionHeaderTable.GetHeaderKey(actionHeaderIndex);
+                    if (!string.IsNullOrEmpty(localActionName))
+                    {
+                        result[localActionName] = newSprPartInfo;
+                    }
+                }
+
+                actionHeaderIndex++;
             }
 
             return result;

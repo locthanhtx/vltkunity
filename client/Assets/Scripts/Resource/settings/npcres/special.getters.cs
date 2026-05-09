@@ -506,7 +506,7 @@ namespace game.resource.settings.npcres.special
                 return new();
             }
 
-            if (partSprInfo.frameCount <= 0)
+            if (partSprInfo.frameCount <= 0 || partSprInfo.directionCount <= 0)
             {
                 return new();
             }
@@ -514,6 +514,11 @@ namespace game.resource.settings.npcres.special
             npcres.Structures.PartAnimation result = new();
             result.sprPath = partSprInfo.sprFullPath;
             result.framePerDirection = partSprInfo.frameCount / partSprInfo.directionCount;
+            if (result.framePerDirection <= 0)
+            {
+                return new();
+            }
+
             result.frameBegin = (ushort)(result.framePerDirection * (_direction - 1));
             result.frameEnd = (ushort)(result.frameBegin + result.framePerDirection - 1);
             result.framePerSeconds = _speed * partSprInfo.intervalRatio;
