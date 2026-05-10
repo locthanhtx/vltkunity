@@ -29,6 +29,8 @@ namespace game.resource
 
         public Map()
         {
+            dataController.Config.InitializeRuntimePaths();
+
             this.appearance = new UnityEngine.GameObject(typeof(game.resource.Map).FullName);
 
             this.info = new settings.MapList.MapInfo();

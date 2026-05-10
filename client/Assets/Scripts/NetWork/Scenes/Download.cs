@@ -14,6 +14,8 @@ public class Download : BaseMonoBehaviour
 
     private void Start()
     {
+        game.resource.dataController.Config.InitializeRuntimePaths();
+
         this.dataController = new game.resource.DataController();
         this.curentProgress.value = 0;
         this.totalProgress.value = 0;

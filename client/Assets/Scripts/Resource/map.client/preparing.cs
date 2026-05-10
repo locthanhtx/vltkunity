@@ -447,47 +447,54 @@ namespace game.resource.map
                     break;
                 }
 
-                switch(command.commandID)
+                try
                 {
-                    case Preparing.Command.ID.reset:
-                        this.MainThread_Reset((Preparing.Command.Reset)command);
-                        break;
+                    switch(command.commandID)
+                    {
+                        case Preparing.Command.ID.reset:
+                            this.MainThread_Reset((Preparing.Command.Reset)command);
+                            break;
 
-                    case Preparing.Command.ID.central:
-                        this.MainThread_Central((Preparing.Command.Central)command);
-                        break;
+                        case Preparing.Command.ID.central:
+                            this.MainThread_Central((Preparing.Command.Central)command);
+                            break;
 
-                    case Preparing.Command.ID.addObj:
-                        this.MainThread_AddObj((Preparing.Command.AddObj)command);
-                        break;
+                        case Preparing.Command.ID.addObj:
+                            this.MainThread_AddObj((Preparing.Command.AddObj)command);
+                            break;
 
-                    case Preparing.Command.ID.hideObj:
-                        this.MainThread_HideObj((Preparing.Command.HideObj)command);
-                        break;
+                        case Preparing.Command.ID.hideObj:
+                            this.MainThread_HideObj((Preparing.Command.HideObj)command);
+                            break;
 
-                    case Preparing.Command.ID.addNpc:
-                        this.MainThread_AddNpc((Preparing.Command.AddNpc)command);
-                        break;
+                        case Preparing.Command.ID.addNpc:
+                            this.MainThread_AddNpc((Preparing.Command.AddNpc)command);
+                            break;
 
-                    case Preparing.Command.ID.updateNpc:
-                        this.MainThread_UpdateNpc((Preparing.Command.UpdateNpc)command);
-                        break;
+                        case Preparing.Command.ID.updateNpc:
+                            this.MainThread_UpdateNpc((Preparing.Command.UpdateNpc)command);
+                            break;
 
-                    case Preparing.Command.ID.hideNpc:
-                        this.MainThread_HideNpc((Preparing.Command.HideNpc)command);
-                        break;
+                        case Preparing.Command.ID.hideNpc:
+                            this.MainThread_HideNpc((Preparing.Command.HideNpc)command);
+                            break;
 
-                    case Preparing.Command.ID.enableCache:
-                        this.MainThread_EnableCache((Preparing.Command.EnableCache)command);
-                        break;
+                        case Preparing.Command.ID.enableCache:
+                            this.MainThread_EnableCache((Preparing.Command.EnableCache)command);
+                            break;
 
-                    case Preparing.Command.ID.fps:
-                        this.MainThread_FPS((Preparing.Command.FPS)command);
-                        break;
+                        case Preparing.Command.ID.fps:
+                            this.MainThread_FPS((Preparing.Command.FPS)command);
+                            break;
 
-                    case Preparing.Command.ID.trapGrid:
-                        this.MainThread_TrapGrid((Preparing.Command.TrapGrid)command);
-                        break;
+                        case Preparing.Command.ID.trapGrid:
+                            this.MainThread_TrapGrid((Preparing.Command.TrapGrid)command);
+                            break;
+                    }
+                }
+                catch (Exception exception)
+                {
+                    UnityEngine.Debug.LogError("Map preparing command failed. command=" + command.commandID + " error=" + exception);
                 }
 
                 System.Threading.Thread.Sleep(1);
