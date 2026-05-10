@@ -161,7 +161,10 @@ namespace game.scene
 
         public void CastSkill(int id, int targetId, int level, NpcRes.Normal controller)
         {
-
+            if (controller != null)
+            {
+                NpcAction.DoAction(controller, NPCCMD.do_attack);
+            }
         }
 
         public int GetTargetID()
@@ -170,7 +173,7 @@ namespace game.scene
             if (targetNormalID == -1)
             {
                 FindEmmnyAround();
-                return -1;
+                return targetNormalID;
             }
 
 

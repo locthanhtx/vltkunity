@@ -24,9 +24,22 @@ public class SkillItem : MonoBehaviour
 
     private void Start()
     {
-        button.onClick.AddListener(() => PopUpCanvas.instance.OpenSkillDetail(skill));
-        image.GetComponent<Button>().onClick.AddListener(() => PopUpCanvas.instance.OpenSkillDetail(skill));
-        btnUdpateSkill.onClick.AddListener(() => Debug.Log("Update SKILL"));
+        Button mainButton = button != null ? button : GetComponent<Button>();
+        if (mainButton != null)
+        {
+            mainButton.onClick.AddListener(() => PopUpCanvas.instance?.OpenSkillDetail(skill));
+        }
+
+        Button imageButton = image != null ? image.GetComponent<Button>() : null;
+        if (imageButton != null && imageButton != mainButton)
+        {
+            imageButton.onClick.AddListener(() => PopUpCanvas.instance?.OpenSkillDetail(skill));
+        }
+
+        if (btnUdpateSkill != null)
+        {
+            btnUdpateSkill.onClick.AddListener(() => Debug.Log("Update SKILL"));
+        }
     }
 
     public void SetUpSkillSetting(PlayerSkill skill)
@@ -38,19 +51,46 @@ public class SkillItem : MonoBehaviour
         }
 
         this.skill = skill;
-        SkillSetting skillSetting = SkillSetting.Get(skill.id, skill.level);
-        nameSkill.text = SkillIconLoader.DisplayName(skillSetting, skill.id);
-        levelSkill.text = SkillIconLoader.LevelText(skillSetting, skill.id, skill.level);
-        SkillIcon.sprite = SkillIconLoader.LoadIcon(skill.id);
+        SkillSetting skillSetting = SkillIconLoader.TryGetSetting(skill.id, skill.level);
+        if (nameSkill != null)
+        {
+            nameSkill.text = SkillIconLoader.DisplayName(skillSetting, skill.id);
+        }
+
+        if (levelSkill != null)
+        {
+            levelSkill.text = SkillIconLoader.LevelText(skillSetting, skill.id, skill.level);
+        }
+
+        if (SkillIcon != null)
+        {
+            SkillIcon.sprite = SkillIconLoader.LoadIcon(skillSetting, skill.id);
+        }
     }
 
     public void RemoveSkillData()
     {
         this.skill = null;
-        nameSkill.text = "";
-        levelSkill.text = "";
+        if (nameSkill != null)
+        {
+            nameSkill.text = "";
+        }
+
+        if (levelSkill != null)
+        {
+            levelSkill.text = "";
+        }
+
         Sprite loadedImage = Resources.Load<Sprite>(ImagePath);
-        image.sprite = loadedImage;
+        if (image != null)
+        {
+            image.sprite = loadedImage;
+        }
+
+        if (SkillIcon != null)
+        {
+            SkillIcon.sprite = loadedImage;
+        }
     }
 }
 
@@ -58,17 +98,81 @@ internal static class SkillIconLoader
 {
     private const string SkillIconPath = "SkillIcon/";
     private const string FallbackIconPath = "WorldGameUI/Buttons/btn_fight";
+    private const string DefaultSkillSprPath = "\\spr\\Ui\\技能图标\\枪法.spr";
+    private static readonly System.Collections.Generic.HashSet<string> MissingSprIconLogs = new();
 
     public static Sprite LoadIcon(int skillId)
     {
+        SkillSetting skillSetting = TryGetSetting(skillId, 1);
+        return LoadIcon(skillSetting, skillId);
+    }
+
+    public static SkillSetting TryGetSetting(int skillId, int skillLevel)
+    {
+        if (skillId <= 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            return SkillSetting.Get(skillId, Mathf.Max(1, skillLevel));
+        }
+        catch (System.Exception exception)
+        {
+            Debug.LogWarning("Skill setting failed for skillId=" + skillId + " level=" + skillLevel + ": " + exception.GetBaseException().Message);
+            return null;
+        }
+    }
+
+    public static Sprite LoadIcon(SkillSetting skillSetting, int skillId)
+    {
         Sprite sprite = null;
 
-        if (skillId > 0)
+        if (skillSetting != null && string.IsNullOrEmpty(skillSetting.m_szSkillIcon) == false)
+        {
+            sprite = LoadSprIcon(skillSetting.m_szSkillIcon);
+        }
+
+        if (sprite == null && skillId > 0)
         {
             sprite = Resources.Load<Sprite>(SkillIconPath + skillId);
         }
 
+        if (sprite == null)
+        {
+            sprite = LoadSprIcon(DefaultSkillSprPath);
+        }
+
         return sprite != null ? sprite : Resources.Load<Sprite>(FallbackIconPath);
+    }
+
+    private static Sprite LoadSprIcon(string sprPath)
+    {
+        if (string.IsNullOrEmpty(sprPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            Sprite sprite = Game.Resource(sprPath).Get<Sprite>(game.resource.SPR.firstFrame);
+            if (sprite == null && MissingSprIconLogs.Add(sprPath))
+            {
+                Debug.LogWarning("Skill icon SPR missing: " + sprPath);
+            }
+
+            return sprite;
+        }
+        catch (System.Exception exception)
+        {
+            if (MissingSprIconLogs.Add(sprPath))
+            {
+                Debug.LogWarning("Skill icon SPR failed: " + sprPath + " " + exception.GetBaseException().Message);
+            }
+
+            return null;
+        }
     }
 
     public static bool HasValidSetting(SkillSetting skillSetting, int skillId)

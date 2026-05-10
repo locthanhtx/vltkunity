@@ -21,15 +21,18 @@ namespace game.network.jx
         private const byte C2SRequestNpc = 73;
         private const byte C2SNpcWalk = 75;
         private const byte C2SNpcRun = 76;
+        private const byte C2SNpcSkill = 77;
         private const byte C2SDbPlayerSelect = 108;
         private const byte C2SPing = 122;
         private const byte C2SCpLock = 124;
+        private const byte C2SNpcRide = 140;
         private const byte C2SPlayerAutoEquip = 177;
         private const byte S2CNotifyPlayerLogin = 52;
         private const byte S2CLogin = 65;
         private const byte S2CRoleListResult = 55;
         private const byte S2CSyncClientEnd = 67;
         private const byte S2CSyncCurPlayer = 68;
+        private const byte S2CSyncCurPlayerSkill = 69;
         private const byte S2CSyncCurPlayerNormal = 70;
         private const byte S2CSyncWorld = 73;
         private const byte S2CSyncPlayer = 74;
@@ -40,11 +43,13 @@ namespace game.network.jx
         private const byte S2CNpcWalk = 85;
         private const byte S2CNpcRun = 86;
         private const byte S2CNpcDeath = 92;
+        private const byte S2CSkillCast = 96;
         private const byte S2CPlayerExp = 98;
         private const byte S2CPlayerSyncLeadExp = 113;
         private const byte S2CPlayerLevelUp = 114;
         private const byte S2CPing = 143;
         private const byte S2CNpcStand = 145;
+        private const byte S2CCastSkillDirectly = 147;
         private const byte S2CRequestNpcFail = 155;
         private const byte S2CItemAutoMove = 158;
         private const byte S2CReplyClientPing = 174;
@@ -123,6 +128,10 @@ namespace game.network.jx
         private readonly HashSet<byte> loggedUnhandledWorldProtocols = new();
         private const int NpcRequestRetryMs = 450;
         private const int MaxNpcRequestRetriesPerPacket = 8;
+        private const int SyncAllSkillHeaderSize = 3;
+        private const int SyncAllSkillLengthFieldSize = 2;
+        private const int SyncAllSkillEntrySize = 8;
+        private const int SyncAllSkillMaxCount = 80;
         private const int MaxQueuedWorldEvents = 8192;
         private bool worldReceiveLoopRunning;
         private bool cpLockSent;
@@ -386,6 +395,26 @@ namespace game.network.jx
             await SendPacketAsync(BuildNpcRunPacket(mapX, mapY, mapId));
         }
 
+        public async Task SendNpcSkillAsync(int skillId, int mpsX, int mpsY)
+        {
+            if (!IsConnected)
+            {
+                return;
+            }
+
+            await SendPacketAsync(BuildNpcSkillPacket(skillId, mpsX, mpsY));
+        }
+
+        public async Task SendRideAsync()
+        {
+            if (!IsConnected)
+            {
+                return;
+            }
+
+            await SendPacketAsync(BuildNpcRidePacket());
+        }
+
         public async Task SendAutoEquipAsync(uint itemId, int kind, int place, int x, int y)
         {
             if (!IsConnected)
@@ -497,8 +526,8 @@ namespace game.network.jx
             while (offset < payload.Length)
             {
                 byte protocol = payload[offset];
-                int packetSize = GetS2CFixedPacketSize(protocol);
                 int remaining = payload.Length - offset;
+                int packetSize = GetS2CPacketSize(payload, offset, remaining);
 
                 if (packetSize <= 0 || packetSize > remaining)
                 {
@@ -523,6 +552,33 @@ namespace game.network.jx
                           " totalSize=" + payload.Length +
                           " count=" + packetCount);
             }
+        }
+
+        private static int GetS2CPacketSize(byte[] payload, int offset, int remaining)
+        {
+            if (payload == null || remaining <= 0 || offset < 0 || offset >= payload.Length)
+            {
+                return 0;
+            }
+
+            byte protocol = payload[offset];
+            if (protocol == S2CSyncCurPlayerSkill)
+            {
+                if (remaining < SyncAllSkillHeaderSize)
+                {
+                    return 0;
+                }
+
+                int protocolLong = BitConverter.ToUInt16(payload, offset + 1);
+                if (protocolLong < SyncAllSkillLengthFieldSize)
+                {
+                    return 0;
+                }
+
+                return 1 + protocolLong;
+            }
+
+            return GetS2CFixedPacketSize(protocol);
         }
 
         private static int GetS2CFixedPacketSize(byte protocol)
@@ -550,6 +606,8 @@ namespace game.network.jx
                     return 13;
                 case S2CNpcDeath:
                     return 69;
+                case S2CSkillCast:
+                    return 37;
                 case S2CPlayerExp:
                     return 9;
                 case S2CPlayerSyncLeadExp:
@@ -560,6 +618,8 @@ namespace game.network.jx
                     return 5;
                 case S2CNpcStand:
                     return 25;
+                case S2CCastSkillDirectly:
+                    return 37;
                 case S2CRequestNpcFail:
                     return 69;
                 case S2CItemAutoMove:
@@ -725,6 +785,23 @@ namespace game.network.jx
             WriteInt32(packet, ref offset, mapY);
             WriteInt32(packet, ref offset, mapId);
             return packet;
+        }
+
+        private static byte[] BuildNpcSkillPacket(int skillId, int mpsX, int mpsY)
+        {
+            byte[] packet = new byte[1 + sizeof(int) + sizeof(int) + sizeof(int)];
+            packet[0] = C2SNpcSkill;
+
+            int offset = 1;
+            WriteInt32(packet, ref offset, skillId);
+            WriteInt32(packet, ref offset, mpsX);
+            WriteInt32(packet, ref offset, mpsY);
+            return packet;
+        }
+
+        private static byte[] BuildNpcRidePacket()
+        {
+            return new[] { C2SNpcRide };
         }
 
         private static byte[] BuildSyncClientEndPacket(bool isLogin, uint clientKey)
@@ -960,6 +1037,9 @@ namespace game.network.jx
                             currentPlayerId = result.PlayerId;
                             MarkPlayerKnown(result.PlayerId);
                         }
+                        break;
+                    case S2CSyncCurPlayerSkill:
+                        await HandleWorldPacketAsync(packet);
                         break;
                     case S2CSyncCurPlayerNormal:
                         ParseCurrentPlayerNormal(packet, characterData);
@@ -1241,6 +1321,18 @@ namespace game.network.jx
                     }
                     break;
 
+                case S2CSkillCast:
+                case S2CCastSkillDirectly:
+                    if (TryParseSkillCastSync(packet, out ClassicSkillCastSync skillCastSync))
+                    {
+                        EnqueueWorldEvent(new ClassicWorldEvent
+                        {
+                            Type = ClassicWorldEventType.SkillCastSync,
+                            SkillCast = skillCastSync
+                        });
+                    }
+                    break;
+
                 case S2CSyncPlayerMap:
                     if (TryParsePlayerMapSync(packet, out int playerMapId, out bool isInCity))
                     {
@@ -1317,6 +1409,17 @@ namespace game.network.jx
                         {
                             Type = ClassicWorldEventType.PlayerSkillLevelSync,
                             Skill = skillSync
+                        });
+                    }
+                    break;
+
+                case S2CSyncCurPlayerSkill:
+                    if (TryParsePlayerSkillListSync(packet, out ClassicSkillListSync skillListSync))
+                    {
+                        EnqueueWorldEvent(new ClassicWorldEvent
+                        {
+                            Type = ClassicWorldEventType.PlayerSkillListSync,
+                            SkillList = skillListSync
                         });
                     }
                     break;
@@ -2236,6 +2339,41 @@ namespace game.network.jx
             return sync.Id != 0;
         }
 
+        private static bool TryParseSkillCastSync(byte[] packet, out ClassicSkillCastSync sync)
+        {
+            sync = null;
+
+            if (packet == null || packet.Length < 37)
+            {
+                return false;
+            }
+
+            int offset = 1;
+            sync = new ClassicSkillCastSync
+            {
+                Id = unchecked((int)BitConverter.ToUInt32(packet, offset))
+            };
+            offset += sizeof(uint);
+
+            sync.SkillId = BitConverter.ToInt32(packet, offset);
+            offset += sizeof(int);
+            sync.SkillLevel = BitConverter.ToInt32(packet, offset);
+            offset += sizeof(int);
+            sync.MpsX = BitConverter.ToInt32(packet, offset);
+            offset += sizeof(int);
+            sync.MpsY = BitConverter.ToInt32(packet, offset);
+            offset += sizeof(int);
+            sync.SkillEnChance = BitConverter.ToInt32(packet, offset);
+            offset += sizeof(int);
+            sync.IsEnChance = BitConverter.ToInt32(packet, offset);
+            offset += sizeof(int);
+            sync.MaxBei = BitConverter.ToInt32(packet, offset);
+            offset += sizeof(int);
+            sync.WaitTime = BitConverter.ToInt32(packet, offset);
+
+            return sync.Id != 0 && sync.SkillId > 0;
+        }
+
         private static bool TryParsePlayerMapSync(byte[] packet, out int id, out bool isInCity)
         {
             const int idOffset = 1;
@@ -2343,6 +2481,57 @@ namespace game.network.jx
                 Type = BitConverter.ToInt32(packet, 21)
             };
             return sync.SkillId > 0;
+        }
+
+        private static bool TryParsePlayerSkillListSync(byte[] packet, out ClassicSkillListSync sync)
+        {
+            sync = null;
+            if (packet == null || packet.Length < SyncAllSkillHeaderSize)
+            {
+                return false;
+            }
+
+            int protocolLong = BitConverter.ToUInt16(packet, 1);
+            if (protocolLong < SyncAllSkillLengthFieldSize)
+            {
+                return false;
+            }
+
+            int skillBytes = protocolLong - SyncAllSkillLengthFieldSize;
+            int availableBytes = Math.Max(0, packet.Length - SyncAllSkillHeaderSize);
+            int skillCount = Math.Min(
+                SyncAllSkillMaxCount,
+                Math.Min(skillBytes, availableBytes) / SyncAllSkillEntrySize);
+
+            List<ClassicSkillLevelSync> skills = new List<ClassicSkillLevelSync>(skillCount);
+            int offset = SyncAllSkillHeaderSize;
+            for (int index = 0; index < skillCount; index++)
+            {
+                int skillId = BitConverter.ToUInt16(packet, offset);
+                int skillLevel = packet[offset + 2];
+                int skillAdd = packet[offset + 3];
+                int skillExp = BitConverter.ToInt32(packet, offset + 4);
+                offset += SyncAllSkillEntrySize;
+
+                if (skillId <= 0)
+                {
+                    continue;
+                }
+
+                skills.Add(new ClassicSkillLevelSync
+                {
+                    SkillId = skillId,
+                    SkillLevel = skillLevel,
+                    SkillExp = skillExp,
+                    AddPoint = skillAdd
+                });
+            }
+
+            sync = new ClassicSkillListSync
+            {
+                Skills = skills
+            };
+            return true;
         }
 
         private static bool TryParseItemSync(byte[] packet, out ClassicItemSync sync)
@@ -3376,6 +3565,7 @@ namespace game.network.jx
         PlayerPositionSync,
         ActorCommandSync,
         PlayerAttributeSync,
+        PlayerSkillListSync,
         PlayerSkillLevelSync,
         ItemSync,
         ItemRemoveSync,
@@ -3386,7 +3576,8 @@ namespace game.network.jx
         SkillPropPointSync,
         PlayerExpSync,
         LeadExpSync,
-        PlayerLevelUpSync
+        PlayerLevelUpSync,
+        SkillCastSync
     }
 
     public sealed class ClassicWorldEvent
@@ -3399,6 +3590,7 @@ namespace game.network.jx
         public ClassicNpcPositionSync Position;
         public ClassicNpcCommandSync Command;
         public ClassicAttributeSync Attribute;
+        public ClassicSkillListSync SkillList;
         public ClassicSkillLevelSync Skill;
         public ClassicItemSync Item;
         public ClassicItemRemoveSync ItemRemove;
@@ -3410,6 +3602,7 @@ namespace game.network.jx
         public ClassicPlayerExpSync PlayerExp;
         public ClassicLeadExpSync LeadExp;
         public ClassicPlayerLevelUpSync LevelUp;
+        public ClassicSkillCastSync SkillCast;
     }
 
     public sealed class ClassicPlayerExpSync
@@ -3449,6 +3642,11 @@ namespace game.network.jx
         public int LeavePoint;
         public int AddPoint;
         public int Type;
+    }
+
+    public sealed class ClassicSkillListSync
+    {
+        public List<ClassicSkillLevelSync> Skills;
     }
 
     public sealed class ClassicItemSync
@@ -3626,5 +3824,18 @@ namespace game.network.jx
     {
         public int Id;
         public byte Command;
+    }
+
+    public sealed class ClassicSkillCastSync
+    {
+        public int Id;
+        public int SkillId;
+        public int SkillLevel;
+        public int MpsX;
+        public int MpsY;
+        public int SkillEnChance;
+        public int IsEnChance;
+        public int MaxBei;
+        public int WaitTime;
     }
 }

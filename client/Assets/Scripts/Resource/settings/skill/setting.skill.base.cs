@@ -5,6 +5,8 @@ namespace game.resource.settings.skill
 {
     public class SkillSettingBase : SkillSettingData
     {
+        private const string DefaultSkillIcon = "\\spr\\Ui\\技能图标\\枪法.spr";
+
         protected void LoadBase(int skillId)
         {
             if (Cache.Settings.Skill.skillsIdToRowIndexMapping.ContainsKey(skillId) == false)
@@ -15,67 +17,66 @@ namespace game.resource.settings.skill
             this.InitSettingData();
 
             int rowIndex = Cache.Settings.Skill.skillsIdToRowIndexMapping[skillId];
+            resource.Table table = Cache.Settings.Skill.skillsTable;
 
             this.m_nId = skillId;
-            this.m_szName = Cache.Settings.Skill.skillsTable.Get<string>((int)mapping.settings.Skill.HeaderIndexer.SkillName, rowIndex);
-            this.m_property = Cache.Settings.Skill.skillsTable.Get<string>((int)mapping.settings.Skill.HeaderIndexer.Property, rowIndex);
-            this.m_nAttrib = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.Attrib, rowIndex);
-            this.m_usReqLevel = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.ReqLevel, rowIndex);
-            this.m_maxLevel = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.MaxLevel, rowIndex);
-            this.m_nEquiptLimited = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.EqtLimit, rowIndex);
-            this.m_nHorseLimited = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.HorseLimit, rowIndex);
-            this.m_bDoHurt = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.DoHurt, rowIndex);
-            this.m_nChildSkillNum = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.ChildSkillNum, rowIndex);
-            this.m_eMisslesForm = (skill.Defination.MisslesForm)Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.MisslesForm, rowIndex);
-            this.m_nCharClass = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.CharClass, rowIndex);
-            this.m_eSkillStyle = (skill.Defination.SKillStyle)Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.SkillStyle, rowIndex);
-            this.m_nCharActionId = (skill.Defination.CLIENTACTION)Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.CharAnimId, rowIndex);
-            this.m_bIsAura = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.IsAura, rowIndex);
-            this.m_bUseAttackRate = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.IsUseAR, rowIndex);
-            this.m_bTargetOnly = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.TargetOnly, rowIndex);
-            this.m_bTargetEnemy = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.TargetEnemy, rowIndex);
-            this.m_bTargetAlly = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.TargetAlly, rowIndex);
-            this.m_bTargetObj = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.TargetObj, rowIndex);
-            this.m_bTargetOther = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.TargetOther, rowIndex);
-            this.m_bTargetNoNpc = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.TargetNoNpc, rowIndex);
-            this.m_bBaseSkill = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.BaseSkill, rowIndex);
-            this.m_bByMissle = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.ByMissle, rowIndex);
-            this.m_nChildSkillId = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.ChildSkillId, rowIndex);
-            this.m_bFlyingEvent = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.FlyEvent, rowIndex);
-            this.m_bStartEvent = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.StartEvent, rowIndex);
-            this.m_bCollideEvent = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.CollideEvent, rowIndex);
-            this.m_bVanishedEvent = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.VanishedEvent, rowIndex);
-            this.m_nFlySkillId = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.FlySkillId, rowIndex);
-            this.m_nStartSkillId = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.StartSkillId, rowIndex);
-            this.m_nVanishedSkillId = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.VanishedSkillId, rowIndex);
-            this.m_nCollideSkillId = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.CollidSkillId, rowIndex);
-            this.m_nSkillCostType = (skill.Defination.NPCATTRIB)Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.SkillCostType, rowIndex);
-            this.m_nCost = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.CostValue, rowIndex);
-            this.m_nMinTimePerCast = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.TimePerCast, rowIndex);
-            this.m_nMinTimePerCastOnHorse = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.TimePerCastOnHorse, rowIndex);
-            this.m_nValue1 = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.Param1, rowIndex);
-            this.m_nValue2 = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.Param2, rowIndex);
-            this.m_nChildSkillLevel = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.ChildSkillLevel, rowIndex);
-            this.m_nEventSkillLevel = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.EventSkillLevel, rowIndex);
-            this.m_bIsMelee = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.IsMelee, rowIndex);
-            this.m_nFlyEventTime = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.FlyEventTime, rowIndex);
-            this.m_nShowEvent = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.ShowEvent, rowIndex);
-            this.m_eMisslesGenerateStyle = (skill.Defination.MisslesGenerateStyle)Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.MslsGenerate, rowIndex);
-            this.m_nMisslesGenerateData = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.MslsGenerateData, rowIndex);
-            this.m_nMaxShadowNum = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.MaxShadowNum, rowIndex);
-            this.m_nAttackRadius = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.AttackRadius, rowIndex);
-            this.m_nWaitTime = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.WaitTime, rowIndex);
-            this.m_bClientSend = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.ClientSend, rowIndex);
-            this.m_bTargetSelf = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.TargetSelf, rowIndex);
-            this.m_nInteruptTypeWhenMove = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.StopWhenMove, rowIndex);
-            this.m_bHeelAtParent = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.HeelAtParent, rowIndex);
-            this.m_nIsExpSkill = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.IsExpSkill, rowIndex);
-            this.m_nSeries = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.Series, rowIndex);
-            this.m_nShowAddition = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.ShowAddition, rowIndex);
-            this.m_bIsPhysical = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.IsPhysical, rowIndex);
-            this.m_nStateSpecialId = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.StateSpecialId, rowIndex);
-            this.m_maxLevel = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.MaxLevel, rowIndex);
-            this.m_property = Cache.Settings.Skill.skillsTable.Get<string>((int)mapping.settings.Skill.HeaderIndexer.Property, rowIndex);
+            this.m_szName = GetString(table, "SkillName", rowIndex);
+            this.m_property = GetString(table, "Property", rowIndex);
+            this.m_nAttrib = GetInt(table, "Attrib", rowIndex);
+            this.m_usReqLevel = GetInt(table, "ReqLevel", rowIndex);
+            this.m_maxLevel = GetInt(table, "MaxLevel", rowIndex, 20);
+            this.m_nEquiptLimited = GetInt(table, "EqtLimit", rowIndex, -2);
+            this.m_nHorseLimited = GetInt(table, "HorseLimit", rowIndex);
+            this.m_bDoHurt = GetInt(table, "DoHurt", rowIndex);
+            this.m_nChildSkillNum = GetInt(table, "ChildSkillNum", rowIndex);
+            this.m_eMisslesForm = (skill.Defination.MisslesForm)GetInt(table, "MisslesForm", rowIndex);
+            this.m_nCharClass = GetInt(table, "CharClass", rowIndex);
+            this.m_eSkillStyle = (skill.Defination.SKillStyle)GetInt(table, "SkillStyle", rowIndex);
+            this.m_nCharActionId = (skill.Defination.CLIENTACTION)GetInt(table, "CharAnimId", rowIndex);
+            this.m_bIsAura = GetBoolInt(table, "IsAura", rowIndex);
+            this.m_bUseAttackRate = GetBoolInt(table, "IsUseAR", rowIndex);
+            this.m_bTargetOnly = GetBoolInt(table, "TargetOnly", rowIndex);
+            this.m_bTargetEnemy = GetBoolInt(table, "TargetEnemy", rowIndex);
+            this.m_bTargetAlly = GetBoolInt(table, "TargetAlly", rowIndex);
+            this.m_bTargetObj = GetBoolInt(table, "TargetObj", rowIndex);
+            this.m_bTargetOther = GetBoolInt(table, "TargetOther", rowIndex);
+            this.m_bTargetNoNpc = GetBoolInt(table, "TargetNoNpc", rowIndex);
+            this.m_bBaseSkill = GetBoolInt(table, "BaseSkill", rowIndex);
+            this.m_bByMissle = GetBoolInt(table, "ByMissle", rowIndex);
+            this.m_nChildSkillId = GetInt(table, "ChildSkillId", rowIndex);
+            this.m_bFlyingEvent = GetBoolInt(table, "FlyEvent", rowIndex);
+            this.m_bStartEvent = GetBoolInt(table, "StartEvent", rowIndex);
+            this.m_bCollideEvent = GetBoolInt(table, "CollideEvent", rowIndex);
+            this.m_bVanishedEvent = GetBoolInt(table, "VanishedEvent", rowIndex);
+            this.m_nFlySkillId = GetInt(table, "FlySkillId", rowIndex);
+            this.m_nStartSkillId = GetInt(table, "StartSkillId", rowIndex);
+            this.m_nVanishedSkillId = GetInt(table, "VanishedSkillId", rowIndex);
+            this.m_nCollideSkillId = GetInt(table, "CollidSkillId", rowIndex);
+            this.m_nSkillCostType = (skill.Defination.NPCATTRIB)GetInt(table, "SkillCostType", rowIndex);
+            this.m_nCost = GetInt(table, "CostValue", rowIndex);
+            this.m_nMinTimePerCast = GetInt(table, "TimePerCast", rowIndex);
+            this.m_nMinTimePerCastOnHorse = GetInt(table, "TimePerCastOnHorse", rowIndex);
+            this.m_nValue1 = GetInt(table, "Param1", rowIndex);
+            this.m_nValue2 = GetInt(table, "Param2", rowIndex);
+            this.m_nChildSkillLevel = GetInt(table, "ChildSkillLevel", rowIndex);
+            this.m_nEventSkillLevel = GetInt(table, "EventSkillLevel", rowIndex);
+            this.m_bIsMelee = GetBoolInt(table, "IsMelee", rowIndex);
+            this.m_nFlyEventTime = GetInt(table, "FlyEventTime", rowIndex);
+            this.m_nShowEvent = GetInt(table, "ShowEvent", rowIndex);
+            this.m_eMisslesGenerateStyle = (skill.Defination.MisslesGenerateStyle)GetInt(table, "MslsGenerate", rowIndex);
+            this.m_nMisslesGenerateData = GetInt(table, "MslsGenerateData", rowIndex);
+            this.m_nMaxShadowNum = GetInt(table, "MaxShadowNum", rowIndex);
+            this.m_nAttackRadius = GetInt(table, "AttackRadius", rowIndex, 50);
+            this.m_nWaitTime = GetInt(table, "WaitTime", rowIndex);
+            this.m_bClientSend = GetBoolInt(table, "ClientSend", rowIndex);
+            this.m_bTargetSelf = GetBoolInt(table, "TargetSelf", rowIndex);
+            this.m_nInteruptTypeWhenMove = GetInt(table, "StopWhenMove", rowIndex);
+            this.m_bHeelAtParent = GetBoolInt(table, "HeelAtParent", rowIndex);
+            this.m_nIsExpSkill = GetInt(table, "IsExpSkill", rowIndex);
+            this.m_nSeries = GetInt(table, "Series", rowIndex, -1);
+            this.m_nShowAddition = GetInt(table, "ShowAddition", rowIndex);
+            this.m_bIsPhysical = GetBoolInt(table, "IsPhysical", rowIndex);
+            this.m_nStateSpecialId = GetInt(table, "StateSpecialId", rowIndex);
 
             m_eRelation = 0;
             if (this.m_bTargetEnemy != 0)
@@ -93,18 +94,13 @@ namespace game.resource.settings.skill
                 m_eRelation |= (int)skill.Defination.NPC_RELATION.relation_none;
             }
 
-            this.m_szSkillDesc = Cache.Settings.Skill.skillsTable.Get<string>((int)mapping.settings.Skill.HeaderIndexer.SkillDesc, rowIndex);
-            this.m_bNeedShadow = Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.NeedShadow, rowIndex);
-            this.m_szSkillIcon = Cache.Settings.Skill.skillsTable.Get<string>((int)mapping.settings.Skill.HeaderIndexer.SkillIcon, rowIndex);
-            this.m_eLRSkillInfo = (skill.Defination.SkillLRInfo)Cache.Settings.Skill.skillsTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.LRSkill, rowIndex);
-            this.m_szPreCastEffectFile = Cache.Settings.Skill.skillsTable.Get<string>((int)mapping.settings.Skill.HeaderIndexer.PreCastSpr, rowIndex);
-            this.m_szManPreCastSoundFile = Cache.Settings.Skill.skillsTable.Get<string>((int)mapping.settings.Skill.HeaderIndexer.ManCastSnd, rowIndex);
-            this.m_szFMPreCastSoundFile = Cache.Settings.Skill.skillsTable.Get<string>((int)mapping.settings.Skill.HeaderIndexer.FMCastSnd, rowIndex);
-
-            if (this.m_szSkillIcon == string.Empty)
-            {
-                this.m_szSkillIcon = "\\spr\\skill\\ͼ��\\ͨ��.spr";
-            }
+            this.m_szSkillDesc = GetString(table, "SkillDesc", rowIndex, "<null data>");
+            this.m_bNeedShadow = GetBoolInt(table, "NeedShadow", rowIndex);
+            this.m_szSkillIcon = GetString(table, "SkillIcon", rowIndex, DefaultSkillIcon);
+            this.m_eLRSkillInfo = (skill.Defination.SkillLRInfo)GetInt(table, "LRSkill", rowIndex);
+            this.m_szPreCastEffectFile = GetString(table, "PreCastSpr", rowIndex);
+            this.m_szManPreCastSoundFile = GetString(table, "ManCastSnd", rowIndex);
+            this.m_szFMPreCastSoundFile = GetString(table, "FMCastSnd", rowIndex);
 
             if (Cache.Settings.Skill.skillsTable.GetEncoding().byteOrderMarks == 0)
             {
@@ -112,6 +108,31 @@ namespace game.resource.settings.skill
                 this.m_property = formater.TCVN3.UTF8(this.m_property);
                 this.m_szSkillDesc = formater.TCVN3.UTF8(this.m_szSkillDesc);
             }
+        }
+
+        ////////////////////////////////////////////////////////////////////////////////
+
+        private static int GetInt(resource.Table table, string header, int rowIndex, int defaultValue = 0)
+        {
+            int columnIndex = table.GetHeaderIndex(header);
+            return columnIndex >= 0 ? table.Get<int>(columnIndex, rowIndex, defaultValue) : defaultValue;
+        }
+
+        private static int GetBoolInt(resource.Table table, string header, int rowIndex)
+        {
+            return GetInt(table, header, rowIndex) > 0 ? 1 : 0;
+        }
+
+        private static string GetString(resource.Table table, string header, int rowIndex, string defaultValue = "")
+        {
+            int columnIndex = table.GetHeaderIndex(header);
+            if (columnIndex < 0)
+            {
+                return defaultValue;
+            }
+
+            string value = table.Get<string>(columnIndex, rowIndex);
+            return string.IsNullOrEmpty(value) ? defaultValue : value;
         }
 
         ////////////////////////////////////////////////////////////////////////////////

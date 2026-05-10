@@ -32,8 +32,11 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
     private readonly Dictionary<int, ClassicPlayerSync> pendingClassicPlayerSyncs = new();
     private const float ClassicNpcNormalSyncDuration = 0.22f;
     private const float ClassicRunEchoIgnoreSeconds = 0.35f;
+    private const float ClassicSkillMinSendInterval = 0.16f;
+    private const float ClassicSkillMaxSendInterval = 0.75f;
     private bool classicLocalMovementActive;
     private float classicRunEchoIgnoreUntil;
+    private float nextClassicSkillSendTime;
 
     [SerializeField]
     private bool usePhotonServer = false;
@@ -354,6 +357,10 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
                         ApplyClassicAttributeSync(worldEvent.Attribute);
                         break;
 
+                    case ClassicWorldEventType.PlayerSkillListSync:
+                        ApplyClassicSkillListSync(worldEvent.SkillList);
+                        break;
+
                     case ClassicWorldEventType.PlayerSkillLevelSync:
                         ApplyClassicSkillLevelSync(worldEvent.Skill);
                         break;
@@ -396,6 +403,10 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
 
                     case ClassicWorldEventType.PlayerLevelUpSync:
                         ApplyClassicPlayerLevelUpSync(worldEvent.LevelUp);
+                        break;
+
+                    case ClassicWorldEventType.SkillCastSync:
+                        ApplyClassicSkillCastSync(worldEvent.SkillCast);
                         break;
                 }
             }
@@ -525,6 +536,35 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
 
         SetPlayerSkill(skill);
         iMainPlayerClientListener?.SyncChracter();
+    }
+
+    private void ApplyClassicSkillListSync(ClassicSkillListSync sync)
+    {
+        if (sync?.Skills == null)
+        {
+            return;
+        }
+
+        playerSkills.Clear();
+        foreach (ClassicSkillLevelSync skillSync in sync.Skills)
+        {
+            if (skillSync == null || skillSync.SkillId <= 0)
+            {
+                continue;
+            }
+
+            PlayerSkill skill = new PlayerSkill
+            {
+                id = ClampUInt16(skillSync.SkillId),
+                level = ClampByte(Math.Max(1, skillSync.SkillLevel)),
+                exp = (uint)Math.Max(0, skillSync.SkillExp)
+            };
+
+            SetPlayerSkill(skill);
+        }
+
+        PopUpCanvas.instance?.RefreshSkillIfOpen();
+        Debug.Log("JxClassicClient << skill list count=" + playerSkills.Count);
     }
 
     private void ApplyClassicItemSync(ClassicItemSync sync)
@@ -1061,6 +1101,7 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         }
 
         ApplyClassicPlayerEquipment(player.controller, sync);
+        ApplyClassicMainPlayerHorseState(sync);
         ApplyClassicPlayerControllerSpeedState(player.controller, sync);
         JxClassicMovement.EnsureBaseSpeed(player.controller);
 
@@ -1217,6 +1258,16 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         {
             controller.SetHorseItemDefault();
         }
+    }
+
+    private void ApplyClassicMainPlayerHorseState(ClassicPlayerSync sync)
+    {
+        if (sync == null || sync.Id != PlayerId || PlayerMain.instance == null)
+        {
+            return;
+        }
+
+        PlayerMain.instance.SetHorseRidingLocal(sync.HorseType >= 0);
     }
 
     private void ApplyClassicNpcRuntimeState(NpcClick npc, ClassicNpcSync sync, byte direction)
@@ -1410,6 +1461,96 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
                 npc.CurrentHPCur = 0;
             }
         }
+    }
+
+    private void ApplyClassicSkillCastSync(ClassicSkillCastSync sync)
+    {
+        if (sync == null || sync.Id == 0 || sync.SkillId <= 0)
+        {
+            return;
+        }
+
+        game.resource.settings.npcres.Controller caster = FindClassicController(sync.Id);
+        if (caster == null)
+        {
+            return;
+        }
+
+        int direction = ResolveClassicSkillDirection(caster, sync);
+        if (direction >= 0)
+        {
+            caster.SyncDirection(direction);
+        }
+
+        ApplyClassicSkillAnimation(caster, sync.SkillId, sync.SkillLevel);
+    }
+
+    private game.resource.settings.npcres.Controller FindClassicController(int id)
+    {
+        if (id == PlayerId)
+        {
+            return world != null ? world.GetMainPlayer() : null;
+        }
+
+        CharacterClick player = CharMgrs != null ? CharMgrs.FindPlayer(id) : null;
+        if (player != null && player.controller != null)
+        {
+            return player.controller;
+        }
+
+        NpcClick npc = NpcMgrs != null ? NpcMgrs.FindNpc(id) : null;
+        return npc != null ? npc.GetController() : null;
+    }
+
+    private int ResolveClassicSkillDirection(
+        game.resource.settings.npcres.Controller caster,
+        ClassicSkillCastSync sync)
+    {
+        if (caster == null || sync == null)
+        {
+            return -1;
+        }
+
+        if (sync.MpsX < 0 && sync.MpsY > 0)
+        {
+            game.resource.settings.npcres.Controller target = FindClassicController(sync.MpsY);
+            return target != null
+                ? JxClassicMovement.GetDirection(caster.GetMapPosition(), target.GetMapPosition())
+                : -1;
+        }
+
+        if (sync.MpsX > 0 || sync.MpsY > 0)
+        {
+            return JxClassicMovement.GetDirection(caster.GetMapPosition(), sync.MpsY / 2, sync.MpsX);
+        }
+
+        return -1;
+    }
+
+    private static void ApplyClassicSkillAnimation(
+        game.resource.settings.npcres.Controller caster,
+        int skillId,
+        int skillLevel)
+    {
+        try
+        {
+            game.resource.settings.skill.SkillSetting skillSetting =
+                game.resource.settings.skill.SkillSetting.Get(skillId, Math.Max(1, skillLevel));
+            if (skillSetting != null &&
+                skillSetting.m_nCharActionId == game.resource.settings.skill.Defination.CLIENTACTION.cdo_magic)
+            {
+                caster.SetAction(game.resource.settings.NpcRes.Action.magic);
+                return;
+            }
+        }
+        catch (Exception exception)
+        {
+            Debug.LogWarning("JxClassicClient skill animation fallback. skill=" + skillId +
+                             " level=" + skillLevel +
+                             " error=" + exception.GetBaseException().Message);
+        }
+
+        NpcAction.DoAction(caster, NPCCMD.do_attack);
     }
 
     private void ApplyClassicPositionSync(ClassicNpcPositionSync sync)
@@ -1787,6 +1928,62 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
 
                 return true;
 
+            case OperationCode.NpcSkill:
+                if (parameters == null ||
+                    !parameters.TryGetValue((byte)ParamterCode.SkillId, out object skillIdValue))
+                {
+                    return false;
+                }
+
+                int skillId = Convert.ToInt32(skillIdValue);
+                int skillLevel = 1;
+                if (parameters.TryGetValue((byte)ParamterCode.SkillLevel, out object skillLevelValue))
+                {
+                    skillLevel = Math.Max(1, Convert.ToInt32(skillLevelValue));
+                }
+
+                if (Time.time < nextClassicSkillSendTime)
+                {
+                    return true;
+                }
+
+                PrepareClassicRideStateForSkill(skillId, skillLevel);
+
+                nextClassicSkillSendTime = Time.time + GetClassicSkillSendInterval(skillId, skillLevel);
+
+                int skillMpsX = -1;
+                int skillMpsY = PlayerId;
+                int skillTargetId = -1;
+                bool hasMapTarget = false;
+
+                if (parameters.TryGetValue((byte)ParamterCode.MapX, out object skillMapXValue) &&
+                    parameters.TryGetValue((byte)ParamterCode.MapY, out object skillMapYValue))
+                {
+                    skillMpsX = Convert.ToInt32(skillMapXValue);
+                    skillMpsY = Convert.ToInt32(skillMapYValue);
+                    if (skillMpsX < 0)
+                    {
+                        skillTargetId = skillMpsY;
+                    }
+                    else
+                    {
+                        hasMapTarget = true;
+                    }
+                }
+                else if (parameters.TryGetValue((byte)ParamterCode.Id, out object targetIdValue))
+                {
+                    skillTargetId = Convert.ToInt32(targetIdValue);
+                    skillMpsX = -1;
+                    skillMpsY = skillTargetId;
+                }
+
+                FireAndForgetClassicSend(ClassicClient.SendNpcSkillAsync(skillId, skillMpsX, skillMpsY));
+                PreviewClassicNpcSkill(skillId, skillLevel, skillTargetId, hasMapTarget, skillMpsX, skillMpsY);
+                Debug.Log("JxClassicClient >> npc skill id=" + skillId +
+                          " x=" + skillMpsX +
+                          " y=" + skillMpsY);
+                return true;
+
             case OperationCode.AutoEquip:
                 if (parameters == null ||
                     !parameters.TryGetValue((byte)ParamterCode.ItemId, out object itemIdValue))
@@ -1824,6 +2021,93 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
             default:
                 return false;
         }
+    }
+
+    public void RequestClassicRideToggle()
+    {
+        if (ClassicClient == null || !ClassicClient.IsConnected)
+        {
+            return;
+        }
+
+        FireAndForgetClassicSend(ClassicClient.SendRideAsync());
+        Debug.Log("JxClassicClient >> npc ride toggle");
+    }
+
+    private void PrepareClassicRideStateForSkill(int skillId, int skillLevel)
+    {
+        if (PlayerMain.instance == null || skillId <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            game.resource.settings.skill.SkillSetting skillSetting =
+                game.resource.settings.skill.SkillSetting.Get(skillId, Math.Max(1, skillLevel));
+            if (skillSetting == null)
+            {
+                return;
+            }
+
+            if (skillSetting.m_nHorseLimited == 1 && PlayerMain.instance.IsUseHorse)
+            {
+                PlayerMain.instance.SetHorseRidingLocal(false);
+                RequestClassicRideToggle();
+            }
+            else if (skillSetting.m_nHorseLimited == 2 && !PlayerMain.instance.IsUseHorse)
+            {
+                PlayerMain.instance.SetHorseRidingLocal(true);
+                RequestClassicRideToggle();
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning("JxClassicClient skill horse check skipped. skill=" + skillId +
+                             " level=" + skillLevel +
+                             " error=" + ex.GetBaseException().Message);
+        }
+    }
+
+    private static float GetClassicSkillSendInterval(int skillId, int skillLevel)
+    {
+        try
+        {
+            game.resource.settings.skill.SkillSetting skillSetting =
+                game.resource.settings.skill.SkillSetting.Get(skillId, Math.Max(1, skillLevel));
+            if (skillSetting != null && skillSetting.m_nMinTimePerCast > 0)
+            {
+                return Mathf.Clamp(
+                    skillSetting.m_nMinTimePerCast / JxClassicMovement.CoreTickRate,
+                    ClassicSkillMinSendInterval,
+                    ClassicSkillMaxSendInterval);
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning("JxClassicClient skill cooldown fallback. skill=" + skillId +
+                             " level=" + skillLevel +
+                             " error=" + ex.GetBaseException().Message);
+        }
+
+        return ClassicSkillMinSendInterval;
+    }
+
+    private void PreviewClassicNpcSkill(
+        int skillId,
+        int skillLevel,
+        int targetId,
+        bool hasMapTarget,
+        int mpsX,
+        int mpsY)
+    {
+        if (world == null || world.GetMainPlayer() == null || skillId <= 0)
+        {
+            return;
+        }
+
+        game.resource.settings.npcres.Controller launcher = world.GetMainPlayer();
+        NpcAction.DoAction(launcher, NPCCMD.do_attack);
     }
 
     private static void FireAndForgetClassicSend(Task task)
@@ -1908,6 +2192,11 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
 
     public void SetPlayerSkill(PlayerSkill data)
     {
+        if (data == null || data.id == 0)
+        {
+            return;
+        }
+
         bool containsKey = playerSkills.ContainsKey(data.id);
         if (containsKey)
         {

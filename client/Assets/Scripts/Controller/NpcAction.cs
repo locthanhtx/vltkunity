@@ -53,8 +53,12 @@ public static class NpcAction
                 controller.SetAction(game.resource.settings.NpcRes.Action.normalRun);
                 break;
 
+            case NPCCMD.do_skill:
+            case NPCCMD.do_magic:
+                controller.SetAction(game.resource.settings.NpcRes.Action.magic);
+                break;
+
             case NPCCMD.do_attack:
-                Debug.LogError("anim");
                 if (Time.frameCount % 2 == 0)
                     controller.SetAction(game.resource.settings.NpcRes.Action.attack1);
                 else

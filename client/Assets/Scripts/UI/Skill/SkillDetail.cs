@@ -31,7 +31,11 @@ public class SkillDetail : MonoBehaviour
 
     private void Start()
     {
-        btnCancel.GetComponent<Button>().onClick.AddListener(() => RemoveSkillActive());
+        Button cancelButton = btnCancel != null ? btnCancel.GetComponent<Button>() : null;
+        if (cancelButton != null)
+        {
+            cancelButton.onClick.AddListener(() => RemoveSkillActive());
+        }
     }
 
     public void SetUpSkillSetting(PlayerSkill skill, int location, bool isSkillActive2)
@@ -45,7 +49,7 @@ public class SkillDetail : MonoBehaviour
 
     void RemoveSkillActive()
     {
-        PopUpCanvas.instance.RemoveSkill(location);
+        PopUpCanvas.instance?.RemoveSkill(location);
     }
 
     public void UpdateUIChange(int location)
@@ -58,15 +62,15 @@ public class SkillDetail : MonoBehaviour
     {
         if (location > -1)
         {
-            btnCancel.SetActive(true);
-            panelSkill1.SetActive(false);
-            panelSkill2.SetActive(false);
+            btnCancel?.SetActive(true);
+            panelSkill1?.SetActive(false);
+            panelSkill2?.SetActive(false);
         }
         else
         {
-            btnCancel.SetActive(false);
-            panelSkill1.SetActive(!isSkillActive2);
-            panelSkill2.SetActive(isSkillActive2);
+            btnCancel?.SetActive(false);
+            panelSkill1?.SetActive(!isSkillActive2);
+            panelSkill2?.SetActive(isSkillActive2);
         }
     }
 
@@ -74,27 +78,57 @@ public class SkillDetail : MonoBehaviour
     {
         if (skill == null)
         {
-            nameSkill.text = string.Empty;
-            levelSkill.text = string.Empty;
-            skillDetail.text = string.Empty;
-            SkillIcon.sprite = SkillIconLoader.LoadIcon(0);
+            if (nameSkill != null)
+            {
+                nameSkill.text = string.Empty;
+            }
+
+            if (levelSkill != null)
+            {
+                levelSkill.text = string.Empty;
+            }
+
+            if (skillDetail != null)
+            {
+                skillDetail.text = string.Empty;
+            }
+
+            if (SkillIcon != null)
+            {
+                SkillIcon.sprite = SkillIconLoader.LoadIcon(0);
+            }
             return;
         }
 
-        SkillSetting skillSetting = SkillSetting.Get(skill.id, skill.level);
+        SkillSetting skillSetting = SkillIconLoader.TryGetSetting(skill.id, skill.level);
 
-        nameSkill.text = SkillIconLoader.DisplayName(skillSetting, skill.id);
+        if (nameSkill != null)
+        {
+            nameSkill.text = SkillIconLoader.DisplayName(skillSetting, skill.id);
+        }
 
-        levelSkill.text = SkillIconLoader.LevelText(skillSetting, skill.id, skill.level);
+        if (levelSkill != null)
+        {
+            levelSkill.text = SkillIconLoader.LevelText(skillSetting, skill.id, skill.level);
+        }
 
-        SkillIcon.sprite = SkillIconLoader.LoadIcon(skill.id);
+        if (SkillIcon != null)
+        {
+            SkillIcon.sprite = SkillIconLoader.LoadIcon(skillSetting, skill.id);
+        }
 
         // Skill detail
-        skillDetail.text = SkillIconLoader.Description(skillSetting, skill.id);
+        if (skillDetail != null)
+        {
+            skillDetail.text = SkillIconLoader.Description(skillSetting, skill.id);
+        }
     }
 
     public void UseSkill(int location)
     {
-        PopUpCanvas.instance.SetUPSkillLocation(skill, location);
+        if (skill != null)
+        {
+            PopUpCanvas.instance?.SetUPSkillLocation(skill, location);
+        }
     }
 }

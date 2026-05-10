@@ -19,18 +19,29 @@ namespace game.resource.settings.skill.missile
                 return;
             }
 
-            skill.MissileSetting.AnimateFile missileRes = this.missileSetting.m_MissleRes[(int)eStatus];
+            skill.MissileSetting.AnimateFile missileRes = this.missileSetting.GetAnimateFile(eStatus);
+            if (missileRes == null)
+            {
+                return;
+            }
 
             int nSprDir = missileRes.nDir;
             int nSprFrames = missileRes.nTotalFrame;
             if (nSprDir != 0 && nSprFrames != 0)
             {
-                int nImageDir = (nDir / (64 / nSprDir));
-                int nImageDir1 = (nDir % (64 / nSprDir));
-                if (nImageDir1 >= 32 / nSprDir) nImageDir++;
+                int dirSegment = System.Math.Max(1, 64 / nSprDir);
+                int halfDirSegment = System.Math.Max(1, 32 / nSprDir);
+                int nImageDir = (nDir / dirSegment);
+                int nImageDir1 = (nDir % dirSegment);
+                if (nImageDir1 >= halfDirSegment) nImageDir++;
                 if (nImageDir >= nSprDir) nImageDir = 0;
 
                 int nFramePerDir = (nSprFrames / nSprDir);
+                if (nFramePerDir <= 0)
+                {
+                    return;
+                }
+
                 if (nAllFrame == 0) nAllFrame = nFramePerDir;
                 int nFirstFrame = nImageDir * nFramePerDir;
                 int nTotalFrame = nSprFrames / nSprDir;
@@ -41,18 +52,18 @@ namespace game.resource.settings.skill.missile
                     {
                         if (this.missileSetting.m_bSubLoop == 0)
                         {
-                            nFrame = (nCurLifeFrame / missileRes.nInterval) % nTotalFrame;
+                            nFrame = (nCurLifeFrame / System.Math.Max(1, missileRes.nInterval)) % nTotalFrame;
                         }
                         else
                         {
-                            if ((nCurLifeFrame / missileRes.nInterval) < this.missileSetting.m_nSubStart)
-                                nFrame = nCurLifeFrame / missileRes.nInterval;
+                            if ((nCurLifeFrame / System.Math.Max(1, missileRes.nInterval)) < this.missileSetting.m_nSubStart)
+                                nFrame = nCurLifeFrame / System.Math.Max(1, missileRes.nInterval);
                             else
                             {
                                 if (this.missileSetting.m_nSubStart == this.missileSetting.m_nSubStop)
                                     nFrame = this.missileSetting.m_nSubStart;
                                 else
-                                    nFrame = this.missileSetting.m_nSubStart + ((nCurLifeFrame - this.missileSetting.m_nSubStart) / missileRes.nInterval) % (this.missileSetting.m_nSubStop - this.missileSetting.m_nSubStart);
+                                    nFrame = this.missileSetting.m_nSubStart + ((nCurLifeFrame - this.missileSetting.m_nSubStart) / System.Math.Max(1, missileRes.nInterval)) % (this.missileSetting.m_nSubStop - this.missileSetting.m_nSubStart);
                             }
                         }
                     }
@@ -97,16 +108,22 @@ namespace game.resource.settings.skill.missile
         {
             //UnityEngine.Debug.Log("Start Vanish Effect");
 
-            skill.MissileSetting.AnimateFile missileRes = this.missileSetting.m_MissleRes[(int)Defination.MissleStatus.MS_DoVanish];
+            skill.MissileSetting.AnimateFile missileRes = this.missileSetting.GetAnimateFile(Defination.MissleStatus.MS_DoVanish);
 
-            if (missileRes.nInterval > 0)
+            if (missileRes != null && missileRes.nInterval > 0 && missileRes.nDir > 0 && missileRes.nTotalFrame > 0)
             {
-                int nImageDir = (this.vanishEffect.m_nCurDir / (64 / missileRes.nDir));
-                int nImageDir1 = (this.vanishEffect.m_nCurDir % (64 / missileRes.nDir));
-                if (nImageDir1 >= 32 / missileRes.nDir) nImageDir++;
+                int dirSegment = System.Math.Max(1, 64 / missileRes.nDir);
+                int halfDirSegment = System.Math.Max(1, 32 / missileRes.nDir);
+                int nImageDir = (this.vanishEffect.m_nCurDir / dirSegment);
+                int nImageDir1 = (this.vanishEffect.m_nCurDir % dirSegment);
+                if (nImageDir1 >= halfDirSegment) nImageDir++;
                 if (nImageDir >= missileRes.nDir) nImageDir = 0;
 
                 int nFrame = (nCurLifeFrame - this.vanishEffect.m_nBeginTime) / missileRes.nInterval + nImageDir * missileRes.nTotalFrame / missileRes.nDir;
+                if (nFrame < 0 || nFrame >= missileRes.nTotalFrame)
+                {
+                    return;
+                }
 
                 //UnityEngine.Debug.Log("painting at: " + nCurLifeFrame + ", nFrame: " +  nFrame);
 

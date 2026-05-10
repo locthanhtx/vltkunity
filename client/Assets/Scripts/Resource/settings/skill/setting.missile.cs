@@ -17,23 +17,38 @@ namespace game.resource.settings.skill
             {
                 this.AnimFileName = animFileName;
                 this.SndFileName = sndFileName;
+                this.nTotalFrame = 100;
+                this.nDir = 16;
+                this.nInterval = 1;
 
-                string[] infoVector = animFileInfo.Split(',');
+                string[] infoVector = (animFileInfo ?? string.Empty).Split(',');
+                this.nTotalFrame = ParseAnimFileInfo(infoVector, 0, this.nTotalFrame);
+                this.nDir = ParseAnimFileInfo(infoVector, 1, this.nDir);
+                this.nInterval = ParseAnimFileInfo(infoVector, 2, this.nInterval);
+            }
 
-                if (infoVector.Length >= 1)
+            public bool HasAnimation()
+            {
+                return string.IsNullOrWhiteSpace(this.AnimFileName) == false
+                    && this.nTotalFrame > 0
+                    && this.nDir > 0
+                    && this.nInterval > 0;
+            }
+
+            private static int ParseAnimFileInfo(string[] infoVector, int index, int fallback)
+            {
+                if (infoVector == null || infoVector.Length <= index)
                 {
-                    this.nTotalFrame = int.Parse(Regex.Replace("0" + infoVector[0], "[^0-9-]", string.Empty));
+                    return fallback;
                 }
 
-                if (infoVector.Length >= 2)
+                string value = Regex.Replace(infoVector[index] ?? string.Empty, "[^0-9-]", string.Empty);
+                if (string.IsNullOrEmpty(value))
                 {
-                    this.nDir = int.Parse(Regex.Replace("0" + infoVector[1], "[^0-9-]", string.Empty));
+                    return fallback;
                 }
 
-                if (infoVector.Length >= 3)
-                {
-                    this.nInterval = int.Parse(Regex.Replace("0" + infoVector[2], "[^0-9-]", string.Empty));
-                }
+                return int.TryParse(value, out int parsedValue) ? parsedValue : fallback;
             }
         }
 
@@ -71,6 +86,40 @@ namespace game.resource.settings.skill
         public int m_nSubStart;
         public int m_nSubStop;
         public int m_bFollowNpcWhenCollid;
+
+        ////////////////////////////////////////////////////////////////////////////////
+
+        public MissileSetting.AnimateFile GetAnimateFile(skill.Defination.MissleStatus status)
+        {
+            if (this.m_MissleRes == null)
+            {
+                return null;
+            }
+
+            int index = (int)status;
+            if (index < 0 || index >= skill.Defination.MAX_MISSLE_STATUS)
+            {
+                return null;
+            }
+
+            MissileSetting.AnimateFile primary = this.m_MissleRes[index];
+            if (primary != null && primary.HasAnimation())
+            {
+                return primary;
+            }
+
+            int fallbackIndex = index + skill.Defination.MAX_MISSLE_STATUS;
+            if (fallbackIndex < this.m_MissleRes.Length)
+            {
+                MissileSetting.AnimateFile fallback = this.m_MissleRes[fallbackIndex];
+                if (fallback != null && fallback.HasAnimation())
+                {
+                    return fallback;
+                }
+            }
+
+            return null;
+        }
 
         ////////////////////////////////////////////////////////////////////////////////
 

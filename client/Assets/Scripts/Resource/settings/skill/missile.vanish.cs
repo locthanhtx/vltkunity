@@ -12,9 +12,9 @@ namespace game.resource.settings.skill.missile
                 OnMissleEvent(Defination.MissileEvent.Missle_VanishEvent);
             }
 
-            skill.MissileSetting.AnimateFile missileRes = this.missileSetting.m_MissleRes[(int)Defination.MissleStatus.MS_DoVanish];
+            skill.MissileSetting.AnimateFile missileRes = this.missileSetting.GetAnimateFile(Defination.MissleStatus.MS_DoVanish);
 
-            if(missileRes != null && missileRes.AnimFileName != string.Empty )
+            if(missileRes != null)
             {
                 this.vanishEffect.m_nBeginTime = this.m_nCurrentLife;
                 this.vanishEffect.m_nEndTime = this.vanishEffect.m_nBeginTime + (missileRes.nInterval * missileRes.nTotalFrame / missileRes.nDir);

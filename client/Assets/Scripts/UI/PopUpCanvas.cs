@@ -5,6 +5,7 @@ using UnityEngine;
 public class PopUpCanvas : MonoBehaviour
 {
     public static PopUpCanvas instance;
+    private const string SkillPrefabPath = "WorldGameUI/Prefabs/Skill/Skill";
 
     private GameObject NpcDialog;
 
@@ -35,28 +36,28 @@ public class PopUpCanvas : MonoBehaviour
     }
     void Start()
     {
-        PanelSafeArea = this.gameObject.transform.Find("PanelSafeArea").gameObject;
+        PanelSafeArea = FindDirectChild("PanelSafeArea");
 
-        NpcDialog = this.gameObject.transform.Find("NpcDialog").gameObject;
-        EnhanceDialog = this.gameObject.transform.Find("Enhance").gameObject;
-        PointSetting = this.gameObject.transform.Find("PointSetting").gameObject;
-        SkillPannel = this.gameObject.transform.Find("Skill").gameObject;
-        TrainPannel = this.gameObject.transform.Find("Train").gameObject;
-        GuildPannel = this.gameObject.transform.Find("Guild").gameObject;
-        NewsPannel = this.gameObject.transform.Find("News").gameObject;
-        PanelChatHome = this.PanelSafeArea.transform.Find("PanelChatHome").gameObject;
-        OpenChat = this.PanelChatHome.transform.Find("OpenChat").gameObject;
-        SytemNotifyPannel = this.gameObject.transform.Find("SytemNotifyPannel").gameObject;
-        PlayerPopUp = this.gameObject.transform.Find("PlayerPopUp").gameObject;
-        FirstRecharge = this.gameObject.transform.Find("FirstRecharge").gameObject;
-        LoginReward = this.gameObject.transform.Find("LoginReward").gameObject;
-        PhucLoi = this.gameObject.transform.Find("PhucLoi").gameObject;
-        Shop = this.gameObject.transform.Find("Shop").gameObject;
-        Storage = this.gameObject.transform.Find("Storage").gameObject;
-        Trade = this.gameObject.transform.Find("Trade").gameObject;
+        NpcDialog = FindDirectChild("NpcDialog");
+        EnhanceDialog = FindDirectChild("Enhance");
+        PointSetting = FindDirectChild("PointSetting");
+        EnsureSkillPanel();
+        TrainPannel = FindDirectChild("Train");
+        GuildPannel = FindDirectChild("Guild");
+        NewsPannel = FindDirectChild("News");
+        PanelChatHome = PanelSafeArea != null ? FindDirectChild(PanelSafeArea.transform, "PanelChatHome") : null;
+        OpenChat = PanelChatHome != null ? FindDirectChild(PanelChatHome.transform, "OpenChat") : null;
+        SytemNotifyPannel = FindDirectChild("SytemNotifyPannel");
+        PlayerPopUp = FindDirectChild("PlayerPopUp");
+        FirstRecharge = FindDirectChild("FirstRecharge");
+        LoginReward = FindDirectChild("LoginReward");
+        PhucLoi = FindDirectChild("PhucLoi");
+        Shop = FindDirectChild("Shop");
+        Storage = FindDirectChild("Storage");
+        Trade = FindDirectChild("Trade");
 
-        Storage.GetComponent<Storage>().InitStorage();
-        Trade.GetComponent<Trade>().InitStorage();
+        Storage?.GetComponent<Storage>()?.InitStorage();
+        Trade?.GetComponent<Trade>()?.InitStorage();
     }
 
     //public void MoveViewport(ViewportItem viewportItem)
@@ -66,10 +67,10 @@ public class PopUpCanvas : MonoBehaviour
 
     public void SetUPSkillLocation(PlayerSkill skill, int location)
     {
-        if (SkillPannel != null && skill != null)
+        if (EnsureSkillPanel() != null && skill != null)
         {
             var playerSkill = SkillPannel.GetComponent<PlayerSkills>();
-            playerSkill.AddSkillToActive(skill, location);
+            playerSkill?.AddSkillToActive(skill, location);
         }
     }
 
@@ -124,31 +125,101 @@ public class PopUpCanvas : MonoBehaviour
 
     public void OpenSkillPannel()
     {
+        PlayerSkills playerSkills = EnsureSkillPanel();
         if (SkillPannel != null)
         {
-            SkillPannel.GetComponent<PlayerSkills>()?.RefreshSkills();
+            gameObject.SetActive(true);
             SkillPannel.SetActive(true);
+            SkillPannel.transform.SetAsLastSibling();
+            playerSkills?.RefreshSkills();
+            Debug.Log("PlayerSkills panel opened. active=" + SkillPannel.activeInHierarchy + " hasPlayerSkills=" + (playerSkills != null));
+        }
+        else
+        {
+            Debug.LogWarning("PlayerSkills panel missing: cannot find or load " + SkillPrefabPath);
+        }
+    }
+
+    public void RefreshSkillIfOpen()
+    {
+        if (EnsureSkillPanel() != null && SkillPannel.activeInHierarchy)
+        {
+            SkillPannel.GetComponent<PlayerSkills>()?.RefreshSkills();
         }
     }
 
     public void OpenSkillDetail(PlayerSkill skill)
     {
-        if (SkillPannel != null && skill != null)
+        if (EnsureSkillPanel() != null && skill != null)
         {
             var playerSkill = SkillPannel.GetComponent<PlayerSkills>();
-            playerSkill.OpenSkillDetail(skill);
+            playerSkill?.OpenSkillDetail(skill);
         }
 
     }
 
     public void RemoveSkill(int location)
     {
-        if (SkillPannel != null)
+        if (EnsureSkillPanel() != null)
         {
             var playerSkill = SkillPannel.GetComponent<PlayerSkills>();
-            playerSkill.RemoveSkill(location);
+            playerSkill?.RemoveSkill(location);
         }
 
+    }
+
+    private GameObject FindDirectChild(string childName)
+    {
+        return FindDirectChild(transform, childName);
+    }
+
+    private static GameObject FindDirectChild(Transform parent, string childName)
+    {
+        Transform child = parent != null ? parent.Find(childName) : null;
+        return child != null ? child.gameObject : null;
+    }
+
+    private PlayerSkills EnsureSkillPanel()
+    {
+        if (SkillPannel != null)
+        {
+            PlayerSkills existing = SkillPannel.GetComponent<PlayerSkills>();
+            if (existing != null)
+            {
+                return existing;
+            }
+        }
+
+        PlayerSkills found = GetComponentInChildren<PlayerSkills>(true);
+        if (found != null)
+        {
+            SkillPannel = found.gameObject;
+            return found;
+        }
+
+        GameObject directSkill = FindDirectChild("Skill");
+        if (directSkill != null)
+        {
+            PlayerSkills direct = directSkill.GetComponent<PlayerSkills>();
+            if (direct != null)
+            {
+                SkillPannel = directSkill;
+                return direct;
+            }
+
+            Debug.LogWarning("PopUpCanvas child 'Skill' is missing PlayerSkills. Loading " + SkillPrefabPath);
+        }
+
+        GameObject prefab = Resources.Load<GameObject>(SkillPrefabPath);
+        if (prefab == null)
+        {
+            return null;
+        }
+
+        SkillPannel = Instantiate(prefab, transform);
+        SkillPannel.name = "Skill";
+        SkillPannel.SetActive(false);
+        return SkillPannel.GetComponent<PlayerSkills>();
     }
 
     public void OpenNpcDialog(Sprite sprite, int npcId, string npcName, string name, string data)

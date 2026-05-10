@@ -48,6 +48,11 @@ public class ActionSp : MonoBehaviour
 
     void SwithHorse()
     {
+        if (PlayerMain.instance == null)
+        {
+            return;
+        }
+
         bool isUseHose = PlayerMain.instance.PlayerSwitchHorse();
         UpdateHosreUI(isUseHose);
     }
@@ -55,7 +60,14 @@ public class ActionSp : MonoBehaviour
     public void UpdateHosreUI(bool isUseHose)
     {
         Sprite loadedImage = Resources.Load<Sprite>(isUseHose ? "WorldGameUI/Buttons/btn_ride_up" : "WorldGameUI/Buttons/btn_ride_down");
-        ButtonSwitchHorse.GetComponent<Image>().sprite = loadedImage;
+        if (ButtonSwitchHorse != null)
+        {
+            Image image = ButtonSwitchHorse.GetComponent<Image>();
+            if (image != null)
+            {
+                image.sprite = loadedImage;
+            }
+        }
     }
 
 }

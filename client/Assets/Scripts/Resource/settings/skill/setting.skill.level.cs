@@ -13,7 +13,7 @@ namespace game.resource.settings.skill
             }
 
             int rowIndex = Cache.Settings.Skill.skillsIdToRowIndexMapping[skillId];
-            string scriptPath = Cache.Settings.Skill.skillsTable.Get<string>((int)mapping.settings.Skill.HeaderIndexer.LvlSetScript, rowIndex);
+            string scriptPath = Cache.Settings.Skill.skillsTable.Get<string>("LvlSetScript", rowIndex);
 
             if (scriptPath == null || scriptPath == string.Empty)
             {

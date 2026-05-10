@@ -217,45 +217,96 @@ namespace game
 
         private resource.SPR.FrameCount GetSprFrameCount()
         {
-            return resource.packageIni.PluginApi.n(resource.Cache.resourcePackageHandler, this.path);
+            if (resource.Cache.resourcePackageHandler == IntPtr.Zero || string.IsNullOrEmpty(this.path))
+            {
+                return (ushort)0;
+            }
+
+            try
+            {
+                return resource.packageIni.PluginApi.n(resource.Cache.resourcePackageHandler, this.path);
+            }
+            catch (System.Exception exception)
+            {
+                UnityEngine.Debug.LogWarning("game.Resource >> SPR frame count failed: " + this.path + "\n" + exception.Message);
+                return (ushort)0;
+            }
         }
 
+        [HandleProcessCorruptedStateExceptions]
+        [SecurityCritical]
         private resource.SPR.Info GetSprInfo()
         {
+            if (resource.Cache.resourcePackageHandler == IntPtr.Zero || string.IsNullOrEmpty(this.path))
+            {
+                return null;
+            }
+
+            resource.packageIni.ElementReference elementReference = this.GetPackageElement();
+            if (elementReference.id <= 0 || elementReference.size <= 0)
+            {
+                return null;
+            }
+
             resource.SPR.Info result = new();
 
-            resource.packageIni.PluginApi.m(
-                resource.Cache.resourcePackageHandler,
-                this.path,
-                ref result.width,
-                ref result.height,
-                ref result.centerX,
-                ref result.centerY,
-                ref result.frameCount,
-                ref result.colorCount,
-                ref result.directionCount,
-                ref result.interval
-            );
+            try
+            {
+                resource.packageIni.PluginApi.m(
+                    resource.Cache.resourcePackageHandler,
+                    this.path,
+                    ref result.width,
+                    ref result.height,
+                    ref result.centerX,
+                    ref result.centerY,
+                    ref result.frameCount,
+                    ref result.colorCount,
+                    ref result.directionCount,
+                    ref result.interval
+                );
+            }
+            catch (System.Exception exception)
+            {
+                UnityEngine.Debug.LogWarning("game.Resource >> SPR info failed: " + this.path + "\n" + exception.Message);
+                return null;
+            }
 
             return result;
         }
 
+        [HandleProcessCorruptedStateExceptions]
+        [SecurityCritical]
         private resource.SPR.FrameInfo GetSprFrameInfo(ushort _frameIndex)
         {
+            if (resource.Cache.resourcePackageHandler == IntPtr.Zero || string.IsNullOrEmpty(this.path))
+            {
+                return null;
+            }
+
             resource.SPR.FrameInfo result = new()
             {
                 frameIndex = _frameIndex
             };
 
-            resource.packageIni.PluginApi.l(
-                resource.Cache.resourcePackageHandler,
-                this.path,
-                _frameIndex,
-                ref result.width,
-                ref result.height,
-                ref result.offsetX,
-                ref result.offsetY
-            );
+            try
+            {
+                resource.packageIni.PluginApi.l(
+                    resource.Cache.resourcePackageHandler,
+                    this.path,
+                    _frameIndex,
+                    ref result.width,
+                    ref result.height,
+                    ref result.offsetX,
+                    ref result.offsetY
+                );
+            }
+            catch (System.Exception exception)
+            {
+                UnityEngine.Debug.LogWarning("game.Resource >> SPR frame info failed: " + this.path +
+                                             " frame=" + _frameIndex +
+                                             "\n" + exception.Message);
+                return null;
+            }
 
             return result;
         }
@@ -264,6 +315,11 @@ namespace game
         [SecurityCritical]
         private resource.SPR.TextureBuffer GetSprFrameRawTextureData(resource.SPR.FrameInfo _frameInfo)
         {
+            if (_frameInfo == null || _frameInfo.width == 0 || _frameInfo.height == 0)
+            {
+                return new resource.SPR.TextureBuffer(0);
+            }
+
             int bufferLength = _frameInfo.width * _frameInfo.height * 4;
             resource.SPR.TextureBuffer bufferData = new(bufferLength);
             IntPtr bufferPointer = Marshal.AllocHGlobal(bufferLength);
@@ -301,9 +357,31 @@ namespace game
 
         private UnityEngine.Texture2D GetSprFrameTexture2D(resource.SPR.FrameInfo _frameInfo)
         {
+            if (_frameInfo == null || _frameInfo.width == 0 || _frameInfo.height == 0)
+            {
+                return null;
+            }
+
+            byte[] rawTextureData = this.GetSprFrameRawTextureData(_frameInfo);
+            int expectedLength = _frameInfo.width * _frameInfo.height * 4;
+            if (rawTextureData == null || rawTextureData.Length != expectedLength)
+            {
+                return null;
+            }
+
             UnityEngine.Texture2D newTexture2D = new(_frameInfo.width, _frameInfo.height, UnityEngine.TextureFormat.RGBA32, false);
-            newTexture2D.LoadRawTextureData(this.GetSprFrameRawTextureData(_frameInfo));
-            newTexture2D.Apply();
+            try
+            {
+                newTexture2D.LoadRawTextureData(rawTextureData);
+                newTexture2D.Apply();
+            }
+            catch (System.Exception exception)
+            {
+                UnityEngine.Debug.LogWarning("game.Resource >> SPR texture failed: " + this.path +
+                                             " frame=" + _frameInfo.frameIndex +
+                                             "\n" + exception.Message);
+                return null;
+            }
 
             return newTexture2D;
         }
@@ -315,13 +393,19 @@ namespace game
 
         private UnityEngine.Sprite GetSprFrameSprite(resource.SPR.FrameInfo _frameInfo)
         {
-            if(_frameInfo.width == 0 || _frameInfo.height == 0)
+            if(_frameInfo == null || _frameInfo.width == 0 || _frameInfo.height == 0)
+            {
+                return null;
+            }
+
+            UnityEngine.Texture2D texture = this.GetSprFrameTexture2D(_frameInfo);
+            if (texture == null)
             {
                 return null;
             }
 
             return UnityEngine.Sprite.Create(
-                this.GetSprFrameTexture2D(_frameInfo),
+                texture,
                 new UnityEngine.Rect(0, 0, _frameInfo.width, _frameInfo.height),
                 new UnityEngine.Vector2(0.5f, 0.5f)
             );
@@ -331,7 +415,7 @@ namespace game
         {
             resource.SPR.FrameInfo frameInfo = this.GetSprFrameInfo(_frameIndex);
 
-            if (frameInfo.width == 0 || frameInfo.height == 0)
+            if (frameInfo == null || frameInfo.width == 0 || frameInfo.height == 0)
             {
                 return null;
             }

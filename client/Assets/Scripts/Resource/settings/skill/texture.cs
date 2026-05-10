@@ -17,7 +17,7 @@ namespace game.resource.settings.skill
 
         public UnityEngine.GameObject GetAppearance() => this.appearance.parent;
 
-        public void SetSprPath(string sprPath) => this.spr.path = sprPath;
+        public void SetSprPath(string sprPath) => this.spr.path = sprPath ?? string.Empty;
 
         public string GetSprPath() => this.spr.path;
 

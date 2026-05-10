@@ -297,11 +297,11 @@ public class MainCanvas : MonoBehaviour
         if (PanelHotKeys != null)
         {
             isOpen = !isOpen;
-            PanelHotKeys.GetComponent<SkillAction>().UpdateSkill();
+            PanelHotKeys.GetComponent<SkillAction>()?.UpdateSkill();
             PanelHotKeys.SetActive(isOpen);
-            ButtonCommonGuild.SetActive(!isOpen);
-            ButtonCommonSkill.SetActive(!isOpen);
-            ButtonCommonSettting.SetActive(!isOpen);
+            ButtonCommonGuild?.SetActive(!isOpen);
+            ButtonCommonSkill?.SetActive(!isOpen);
+            ButtonCommonSettting?.SetActive(!isOpen);
         }
     }
 

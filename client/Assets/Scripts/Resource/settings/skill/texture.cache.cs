@@ -5,6 +5,8 @@ namespace game.resource.settings.skill.texture
 {
     public class SprCache
     {
+        private static readonly HashSet<string> missingSprLogs = new HashSet<string>();
+
         public class Data
         {
             public class SprFrame
@@ -28,9 +30,14 @@ namespace game.resource.settings.skill.texture
         private static skill.texture.SprCache.Data.SprFrame CreateSprFrame(
             Dictionary<string, skill.texture.SprCache.Data> storage, string sprPath, ushort frameIndex)
         {
+            if (string.IsNullOrWhiteSpace(sprPath) || storage.ContainsKey(sprPath) == false)
+            {
+                return null;
+            }
+
             resource.SPR.Info sprInfo = storage[sprPath].sprInfo;
 
-            if(sprInfo.frameCount <= frameIndex)
+            if(sprInfo == null || sprInfo.frameCount <= frameIndex)
             {
                 return null;
             }
@@ -76,11 +83,20 @@ namespace game.resource.settings.skill.texture
         private static resource.SPR.Info CreateSpr(
             Dictionary<string, skill.texture.SprCache.Data> storage, string sprPath)
         {
+            if (string.IsNullOrWhiteSpace(sprPath))
+            {
+                return null;
+            }
+
             skill.texture.SprCache.Data newSpr = new skill.texture.SprCache.Data();
             newSpr.sprInfo = Game.Resource(sprPath).Get<resource.SPR.Info>();
 
             if(newSpr.sprInfo == null)
             {
+                if (missingSprLogs.Add(sprPath))
+                {
+                    UnityEngine.Debug.LogWarning("Skill SPR missing: " + sprPath);
+                }
                 return null;
             }
 
@@ -93,6 +109,11 @@ namespace game.resource.settings.skill.texture
         public static resource.SPR.Info GetSprInfo(
             Dictionary<string, skill.texture.SprCache.Data> storage, string sprPath)
         {
+            if (string.IsNullOrWhiteSpace(sprPath))
+            {
+                return null;
+            }
+
             if(storage.ContainsKey(sprPath) == true)
             {
                 return storage[sprPath].sprInfo;
@@ -104,6 +125,11 @@ namespace game.resource.settings.skill.texture
         public static skill.texture.SprCache.Data.SprFrame GetSprFrame(
             Dictionary<string, skill.texture.SprCache.Data> storage, string sprPath, ushort frameIndex)
         {
+            if (string.IsNullOrWhiteSpace(sprPath))
+            {
+                return null;
+            }
+
             if(storage.ContainsKey(sprPath) == true)
             {
                 if(storage[sprPath].sprFrame.ContainsKey(frameIndex) == true)
@@ -117,7 +143,11 @@ namespace game.resource.settings.skill.texture
             }
             else
             {
-                skill.texture.SprCache.CreateSpr(storage, sprPath);
+                if (skill.texture.SprCache.CreateSpr(storage, sprPath) == null)
+                {
+                    return null;
+                }
+
                 return skill.texture.SprCache.CreateSprFrame(storage, sprPath, frameIndex);
             }
         }

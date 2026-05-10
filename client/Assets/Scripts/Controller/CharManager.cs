@@ -4,6 +4,7 @@ using game.network;
 using game.network.listener;
 using game.resource.settings;
 using Photon.ShareLibrary.Handlers;
+using Photon.ShareLibrary.Constant;
 using UnityEngine;
 
 namespace game.scene
@@ -253,10 +254,9 @@ namespace game.scene
 
         public void CastSkill(int id, int targetId, int level, NpcRes.Special controller)
         {
-            NpcRes.Normal TargetController = _npcManager.GetTargetController(targetId);
-            if (TargetController != null)
+            if (controller != null)
             {
-                _wordGame.CastSkill(id, level, TargetController, controller);
+                NpcAction.DoAction(controller, NPCCMD.do_attack);
             }
         }
 

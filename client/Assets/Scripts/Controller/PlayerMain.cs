@@ -188,21 +188,30 @@ public class PlayerMain : CharacterClick, IMainPlayerClientListener
 
     public bool PlayerSwitchHorse()
     {
-        if (IsHaveHorse)
+        SetHorseRidingLocal(!IsUseHorse);
+        PhotonManager.Instance?.RequestClassicRideToggle();
+        return IsUseHorse;
+    }
+
+    public void SetHorseRidingLocal(bool isUseHorse)
+    {
+        IsUseHorse = isUseHorse;
+        if (isUseHorse)
         {
-            IsUseHorse = !IsUseHorse;
+            IsHaveHorse = true;
+        }
+
+        if (this.controller != null)
+        {
             this.controller.SetRiding(IsUseHorse);
-            return IsUseHorse;
         }
-        else
-        {
-            return false;
-        }
+
+        UpdateHorseUI();
     }
 
     void UpdateHorseUI()
     {
-        MainCanvas.instance.CommonSwitch().GetComponent<ActionSp>().UpdateHosreUI(IsUseHorse);
+        MainCanvas.instance?.CommonSwitch()?.GetComponent<ActionSp>()?.UpdateHosreUI(IsUseHorse);
     }
 
     // SYNC ITEM
@@ -380,8 +389,7 @@ public class PlayerMain : CharacterClick, IMainPlayerClientListener
             if (equipmentBase.detail == (int)Defination.Detail.equip_horse)
             {
                 this.IsHaveHorse = true;
-                this.IsUseHorse = true;
-                UpdateHorseUI();
+                SetHorseRidingLocal(true);
             }
         }
 
@@ -431,8 +439,7 @@ public class PlayerMain : CharacterClick, IMainPlayerClientListener
                 case (int)Defination.Detail.equip_horse:
                     this.controller.SetHorseItemDefault();
                     this.IsHaveHorse = false;
-                    this.IsUseHorse = false;
-                    UpdateHorseUI();
+                    SetHorseRidingLocal(false);
                     break;
             }
         }

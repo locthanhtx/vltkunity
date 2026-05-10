@@ -40,7 +40,8 @@ namespace game.resource.settings.skill
 				this.m_nLauncherSrcPY = launcherMapPosition.top;
             }
 
-            this.texture.SetSprPath(missileSetting.m_MissleRes[(int)this.m_eMissleStatus].AnimFileName);
+            skill.MissileSetting.AnimateFile flyResource = missileSetting.GetAnimateFile(this.m_eMissleStatus);
+            this.texture.SetSprPath(flyResource?.AnimFileName);
             this.texture.SetSprFrame(0);
         }
 

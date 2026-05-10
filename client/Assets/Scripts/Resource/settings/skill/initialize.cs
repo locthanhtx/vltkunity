@@ -43,7 +43,11 @@ namespace game.resource.settings.skill
 
             for(int rowIndex = 1; rowIndex < skillTable.RowCount; rowIndex++)
             {
-                result[skillTable.Get<int>((int)mapping.settings.Skill.HeaderIndexer.SkillId, rowIndex)] = rowIndex;
+                int skillId = skillTable.Get<int>("SkillId", rowIndex);
+                if (skillId > 0)
+                {
+                    result[skillId] = rowIndex;
+                }
             }
 
             return result;
@@ -55,7 +59,11 @@ namespace game.resource.settings.skill
 
             for(int rowIndex = 1; rowIndex < missileTable.RowCount; rowIndex++)
             {
-                result[missileTable.Get<int>((int)mapping.settings.Missile.HeaderIndexer.MissleId, rowIndex)] = rowIndex;
+                int missileId = missileTable.Get<int>("MissleId", rowIndex);
+                if (missileId > 0)
+                {
+                    result[missileId] = rowIndex;
+                }
             }
 
             return result;

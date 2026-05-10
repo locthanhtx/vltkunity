@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using game.config;
 using game.network;
 using game.network.listener;
 using Photon.ShareLibrary.Constant;
@@ -10,6 +11,10 @@ using static game.resource.settings.npcres.Identification;
 
 public class NpcClick : MonoBehaviour, ICharacterObj
 {
+    private const int MainSkillLocation = 0;
+    private const int FallbackBasicAttackSkillId = 53;
+    private const byte FallbackBasicAttackSkillLevel = 1;
+
     private int npcId;
     public int Id { get { return npcId; } }
     private string npcName;
@@ -131,9 +136,12 @@ public class NpcClick : MonoBehaviour, ICharacterObj
 
     public void SetGold(byte gold) => controller.GetIdentify().SetGold(gold);
 
-    public void DoSkill(int id, byte level)
+    public void DoSkill(int id, byte level, int targetId = -1)
     {
-        NpcAction.DoAction(controller, NPCCMD.do_attack);
+        if (controller != null)
+        {
+            NpcAction.DoAction(controller, NPCCMD.do_attack);
+        }
     }
 
     private void OnMouseUp()
@@ -142,11 +150,14 @@ public class NpcClick : MonoBehaviour, ICharacterObj
         if (enemy == NPCRELATION.relation_enemy)
         {
             //npcListener.NpcMouseUP(npcId);
+            ResolveMainSkill(out int skillId, out byte skillLevel);
 
             Dictionary<byte, object> opParameters = new()
             {
                 { (byte)ParamterCode.Id, npcId},
-                { (byte)ParamterCode.SkillId, 53},
+                { (byte)ParamterCode.NpcType, npcId},
+                { (byte)ParamterCode.SkillId, skillId},
+                { (byte)ParamterCode.SkillLevel, skillLevel},
             };
             PhotonManager.Instance.TrySendOperation(OperationCode.NpcSkill, opParameters);
         }
@@ -165,6 +176,25 @@ public class NpcClick : MonoBehaviour, ICharacterObj
             };
             PhotonManager.Instance.TrySendOperation(OperationCode.NpcQuery, opParameters);
         }
+    }
+
+    private static void ResolveMainSkill(out int skillId, out byte skillLevel)
+    {
+        string locationSkill = PlayerPrefsKey.USER_SKILL_LOCATION + MainSkillLocation;
+        int targetSkillId = PlayerPrefs.GetInt(locationSkill, FallbackBasicAttackSkillId);
+
+        Dictionary<ushort, PlayerSkill> playerSkills = PhotonManager.Instance.GetPlayerSkill();
+        if (targetSkillId > 0 &&
+            playerSkills != null &&
+            playerSkills.TryGetValue((ushort)targetSkillId, out PlayerSkill skill))
+        {
+            skillId = skill.id;
+            skillLevel = skill.level > 0 ? skill.level : FallbackBasicAttackSkillLevel;
+            return;
+        }
+
+        skillId = FallbackBasicAttackSkillId;
+        skillLevel = FallbackBasicAttackSkillLevel;
     }
 
     private void OnCollisionEnter2D(Collision2D collision)

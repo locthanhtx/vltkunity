@@ -7,6 +7,8 @@ namespace game.resource.map
 {
     class Textures
     {
+        private static readonly bool EnableLocalSkillSpriteRendering = true;
+
         public class Command
         {
             public enum ID
@@ -323,6 +325,7 @@ namespace game.resource.map
         private readonly Dictionary<settings.npcres.Controller, bool> normalNpcs;
         private readonly Dictionary<settings.skill.Missile, bool> missiles;
         private readonly List<MapTextureAnimation> mapTextureAnimations;
+        private readonly HashSet<int> skippedSkillSpriteRenderLogs;
         private int progressingMillisecondsInCycle;
 
         private readonly Dictionary<settings.objres.Controller, bool> objs;
@@ -340,6 +343,7 @@ namespace game.resource.map
             this.normalNpcs = new Dictionary<settings.npcres.Controller, bool>();
             this.missiles = new Dictionary<settings.skill.Missile, bool>();
             this.mapTextureAnimations = new List<MapTextureAnimation>();
+            this.skippedSkillSpriteRenderLogs = new HashSet<int>();
             this.progressingMillisecondsInCycle = (int)((1.0f / 60) * 1000);
 
             this.objs = new Dictionary<settings.objres.Controller, bool>();
@@ -1277,7 +1281,32 @@ namespace game.resource.map
 
         private void Command_CastSkill(Textures.Command.CastSkill _command)
         {
-            List<settings.skill.Missile> missiles = (new settings.Skill(_command.skillId, _command.skillLevel, _command.map)).Cast(_command.castParams);
+            if (!EnableLocalSkillSpriteRendering)
+            {
+                int logKey = (_command.skillId << 8) ^ _command.skillLevel;
+                if (this.skippedSkillSpriteRenderLogs.Add(logKey))
+                {
+                    UnityEngine.Debug.LogWarning(
+                        "Local skill SPR rendering skipped. skill=" + _command.skillId +
+                        " level=" + _command.skillLevel);
+                }
+
+                return;
+            }
+
+            List<settings.skill.Missile> missiles;
+            try
+            {
+                missiles = (new settings.Skill(_command.skillId, _command.skillLevel, _command.map)).Cast(_command.castParams);
+            }
+            catch (Exception exception)
+            {
+                UnityEngine.Debug.LogWarning(
+                    "Local skill SPR rendering failed. skill=" + _command.skillId +
+                    " level=" + _command.skillLevel +
+                    " error=" + exception.GetBaseException().Message);
+                return;
+            }
 
             if(missiles == null)
             {

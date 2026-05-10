@@ -14,7 +14,19 @@ namespace game.resource.settings.skill.texture
                 return;
             }
 
-            skill.texture.SprCache.Data.SprFrame sprFrame = skill.texture.Cache.GetSprFrame(this.spr.path, this.spr.frameIndex);
+            skill.texture.SprCache.Data.SprFrame sprFrame;
+            try
+            {
+                sprFrame = skill.texture.Cache.GetSprFrame(this.spr.path, this.spr.frameIndex);
+            }
+            catch (System.Exception exception)
+            {
+                UnityEngine.Debug.LogWarning("Skill SPR update failed: " + this.spr.path +
+                                             " frame=" + this.spr.frameIndex +
+                                             " error=" + exception.GetBaseException().Message);
+                this.appearance.spriteRendererComponent.sprite = null;
+                return;
+            }
 
             if(sprFrame == null)
             {

@@ -43,11 +43,31 @@ public class CharacterClick : BaseMonoBehaviour, ICharacterObj
     public game.resource.settings.NpcRes.Special controller;
     public void DoSkill(int id, byte level, int targetId)
     {
-        //PhotonManager.Instance.CharMgrs.CastSkill(372, targetId, 1, controller);
-        //playerListener.CastSkill(372, targetId, level, controller);
-        //DoAudio(NPCCMD.do_attack);
+        DoAudio(NPCCMD.do_attack);
     }
+
+    public static game.resource.settings.npcres.Controller ResolveSkillTargetController(int targetId)
+    {
+        if (targetId <= 0 || PhotonManager.Instance == null)
+        {
+            return null;
+        }
+
+        CharacterClick player = PhotonManager.Instance.CharClientListener()?.FindPlayer(targetId);
+        if (player != null && player.controller != null)
+        {
+            return player.controller;
+        }
+
+        NpcClick npc = PhotonManager.Instance.NpcClientListener()?.FindNpc(targetId);
+        return npc?.GetController();
+    }
+
     public virtual void DoAudio(NPCCMD cmd)
     {
+        if (controller != null)
+        {
+            NpcAction.DoAction(controller, cmd);
+        }
     }
 }

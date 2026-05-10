@@ -29,8 +29,15 @@ public class PlayerSkills : MonoBehaviour
 
     void Start()
     {
-        BtnSwitch.onClick.AddListener(() => Switch());
-        BtnClose.onClick.AddListener(() => gameObject.SetActive(false));
+        if (BtnSwitch != null)
+        {
+            BtnSwitch.onClick.AddListener(() => Switch());
+        }
+
+        if (BtnClose != null)
+        {
+            BtnClose.onClick.AddListener(() => gameObject.SetActive(false));
+        }
 
         RefreshSkills();
     }
@@ -45,9 +52,32 @@ public class PlayerSkills : MonoBehaviour
             playerSkills = new Dictionary<ushort, PlayerSkill>();
         }
 
-        ResetSkillList();
-        SetUpSkillActive();
-        SetUpSkillList(playerSkills);
+        try
+        {
+            ResetSkillList();
+        }
+        catch (System.Exception exception)
+        {
+            Debug.LogWarning("PlayerSkills reset list failed: " + exception.Message);
+        }
+
+        try
+        {
+            SetUpSkillActive();
+        }
+        catch (System.Exception exception)
+        {
+            Debug.LogWarning("PlayerSkills active setup failed: " + exception.Message);
+        }
+
+        try
+        {
+            SetUpSkillList(playerSkills);
+        }
+        catch (System.Exception exception)
+        {
+            Debug.LogWarning("PlayerSkills list setup failed: " + exception.Message);
+        }
     }
 
     private void ResetSkillList()
@@ -73,7 +103,7 @@ public class PlayerSkills : MonoBehaviour
         string locationSkill = PlayerPrefsKey.USER_SKILL_LOCATION + location;
         PlayerPrefs.SetInt(locationSkill, skill.id);
         SetUpSkillActive();
-        skillDetail.GetComponent<SkillDetail>().UpdateUIChange(location);
+        skillDetail?.GetComponent<SkillDetail>()?.UpdateUIChange(location);
     }
 
     public void RemoveSkill(int location)
@@ -83,31 +113,41 @@ public class PlayerSkills : MonoBehaviour
             return;
         }
 
-        SkillItem skillItem = SkillActives[location].GetComponent<SkillItem>();
-        skillItem.RemoveSkillData();
+        SkillItem skillItem = SkillActives[location]?.GetComponent<SkillItem>();
+        skillItem?.RemoveSkillData();
 
         string locationSkill = PlayerPrefsKey.USER_SKILL_LOCATION + location;
         PlayerPrefs.SetInt(locationSkill, -1);
-        skillDetail.GetComponent<SkillDetail>().UpdateUIChange(-1);
+        skillDetail?.GetComponent<SkillDetail>()?.UpdateUIChange(-1);
 
     }
 
     void SetUpSkillActive()
     {
+        if (SkillActives == null)
+        {
+            return;
+        }
+
         for (int i = 0; i < SkillActives.Count; i++)
         {
+            if (SkillActives[i] == null)
+            {
+                continue;
+            }
+
             string locationSkill = PlayerPrefsKey.USER_SKILL_LOCATION + i;
             int targetSkillId = PlayerPrefs.GetInt(locationSkill, -1);
 
             if (targetSkillId > -1 && playerSkills.TryGetValue((ushort)targetSkillId, out PlayerSkill skill))
             {
                 SkillItem skillItem = SkillActives[i].GetComponent<SkillItem>();
-                skillItem.SetUpSkillSetting(skill);
+                skillItem?.SetUpSkillSetting(skill);
             }
             else
             {
                 SkillItem skillItem = SkillActives[i].GetComponent<SkillItem>();
-                skillItem.RemoveSkillData();
+                skillItem?.RemoveSkillData();
             }
         }
     }
@@ -120,26 +160,65 @@ public class PlayerSkills : MonoBehaviour
         }
 
         VerticalLayoutGroup verticalLayout = Skills.GetComponent<VerticalLayoutGroup>();
+        Transform parent = verticalLayout != null ? verticalLayout.transform : Skills.transform;
+        int createdCount = 0;
 
         foreach (KeyValuePair<ushort, PlayerSkill> pair in playerSkills)
         {
-            GameObject newChild = Instantiate(childPrefab, Vector3.zero, Quaternion.identity);
-            SkillItem skillItem = newChild.GetComponent<SkillItem>();
-            skillItem.SetUpSkillSetting(pair.Value);
-            newChild.transform.SetParent(verticalLayout.transform, false);
+            if (ShouldHideSkill(pair.Value))
+            {
+                continue;
+            }
+
+            GameObject newChild = null;
+            try
+            {
+                newChild = Instantiate(childPrefab, Vector3.zero, Quaternion.identity);
+                newChild.transform.SetParent(parent, false);
+                SkillItem skillItem = newChild.GetComponent<SkillItem>();
+                skillItem?.SetUpSkillSetting(pair.Value);
+                createdCount++;
+            }
+            catch (System.Exception exception)
+            {
+                Debug.LogWarning("PlayerSkills item failed for skillId=" + pair.Key + ": " + exception.Message);
+                if (newChild != null)
+                {
+                    Destroy(newChild);
+                }
+            }
         }
+
+        Debug.Log("PlayerSkills list refreshed. skills=" + playerSkills.Count + " items=" + createdCount);
+    }
+
+    private static bool ShouldHideSkill(PlayerSkill skill)
+    {
+        if (skill == null || skill.id == 0)
+        {
+            return true;
+        }
+
+        return skill.id == 1 || skill.id == 2 || skill.id == 53;
     }
 
     public void Switch()
     {
         IsSkillActive2 = !IsSkillActive2;
-        skillActive1.SetActive(!IsSkillActive2);
-        skillActive2.SetActive(IsSkillActive2);
+        if (skillActive1 != null)
+        {
+            skillActive1.SetActive(!IsSkillActive2);
+        }
+
+        if (skillActive2 != null)
+        {
+            skillActive2.SetActive(IsSkillActive2);
+        }
     }
 
     public void HideSkill()
     {
-        skillDetail.SetActive(false);
+        skillDetail?.SetActive(false);
     }
 
     public void OpenSkillDetail(PlayerSkill skill)
@@ -177,7 +256,7 @@ public class PlayerSkills : MonoBehaviour
             }
         }
 
-        skillDetail.GetComponent<SkillDetail>().SetUpSkillSetting(skill, location, IsSkillActive2);
-        skillDetail.SetActive(true);
+        skillDetail?.GetComponent<SkillDetail>()?.SetUpSkillSetting(skill, location, IsSkillActive2);
+        skillDetail?.SetActive(true);
     }
 }
