@@ -229,43 +229,12 @@ public class PlayerMain : CharacterClick, IMainPlayerClientListener
 
     Item RestoreItemFromDatabase(ItemData itemdata)
     {
-        game.resource.settings.item.Database itemDatabase = new()
-        {
-            genre = itemdata.Equipclasscode, // settings/meleeweapon.txt
-            detail = itemdata.Detailtype, // settings/meleeweapon.txt
-            particular = itemdata.Particulartype, // settings/meleeweapon.txt
-            level = itemdata.Level, // cấp 10
-            series = itemdata.Series, // hệ kim
-            //databaseId = itemdata.Id,
-            //type = itemdata.Goldid > 0 ? Defination.Type.goldEquip : Defination.Type.normalEquip,
-            //rowIndex = itemdata.Goldid,
-            //stack = itemdata.Stacknum,
-        };
-/*
-        List<MagicAttribute> magicAttributes = new(itemdata.Magics);
-        magicAttributes.Sort((a, b) => a.AttributeIndex.CompareTo(b.AttributeIndex));
-
-        for (int i = 0; i < magicAttributes.Count; i++)
-        {
-            if (magicAttributes[i] != null)
-            {
-                var fieldType = itemDatabase.GetType();
-                var field = fieldType.GetField(string.Format("magic{0}Type", i));
-                field.SetValue(itemDatabase, magicAttributes[i].AttributeType);
-                field = fieldType.GetField(string.Format("magic{0}Value0", i));
-                field.SetValue(itemDatabase, magicAttributes[i].Value0);
-                field = fieldType.GetField(string.Format("magic{0}Value1", i));
-                field.SetValue(itemDatabase, magicAttributes[i].Value1);
-                field = fieldType.GetField(string.Format("magic{0}Value2", i));
-                field.SetValue(itemDatabase, magicAttributes[i].Value2);
-            }
-        }
-*/
-        return new(itemDatabase);
+        return ItemUiMapper.RestoreItem(itemdata);
     }
 
     public void SyncNewItem(ItemData itemData)
     {
+        PopUpCanvas.instance?.RefreshStorageIfOpen();
 /*
         Item item = RestoreItemFromDatabase(itemData);
         if (itemData.Local == (byte)ItemPosition.pos_equip)
@@ -282,6 +251,7 @@ public class PlayerMain : CharacterClick, IMainPlayerClientListener
 
     public void SyncUpdateItem(ItemData itemData)
     {
+        PopUpCanvas.instance?.RefreshStorageIfOpen();
 /*
         if (itemData.Local == (byte)ItemPosition.pos_equip)
         {
@@ -360,8 +330,22 @@ public class PlayerMain : CharacterClick, IMainPlayerClientListener
     // EquipItemFromBag
     public void RequestEquipItemFromBag(Item item, int bagCellIndex)
     {
+        RequestEquipItemFromBag(item, null, bagCellIndex);
+    }
+
+    public void RequestEquipItemFromBag(Item item, ItemData itemData, int bagCellIndex)
+    {
         this.item = item;
         this.bagCellIndex = bagCellIndex;
+        if (itemData != null)
+        {
+            Debug.Log("PlayerMain request use item id=" + itemData.id +
+                      " local=" + itemData.Local +
+                      " x=" + itemData.X +
+                      " y=" + itemData.Y +
+                      " equip=" + (item != null && item.IsEquipment()));
+        }
+
         ChangeEquip(item.GetDatabaseId(), true);
     }
 
@@ -473,6 +457,7 @@ public class PlayerMain : CharacterClick, IMainPlayerClientListener
 
     public void SyncRemoveItem()
     {
+        PopUpCanvas.instance?.RefreshStorageIfOpen();
 /*
         Debug.Log("ClearCell" + bagCellIndex);
         itemTab.ClearCell(bagCellIndex);

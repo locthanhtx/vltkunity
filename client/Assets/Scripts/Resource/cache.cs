@@ -77,8 +77,20 @@ namespace game.resource
                 // items: resource.settings.item.Listing.Equipment
                 public static Dictionary<string, settings.item.EquipmentBase> equipmentBaseMapping;
 
+                // ["detail, axmol_record_index"] => <...>
+                public static Dictionary<string, settings.item.EquipmentBase> equipmentBaseRowMapping;
+
                 // ["genre, detail, particular"] => <...>
                 public static Dictionary<string, settings.item.EquipmentBase> maskEquipBase;
+
+                // ["genre, detail, particular"] => <...>
+                public static Dictionary<string, settings.item.SimpleItemBase> itemBaseMapping;
+
+                // ["genre, detail, particular, level"] => <...>
+                public static Dictionary<string, settings.item.SimpleItemBase> itemBaseLevelMapping;
+
+                // ["genre, axmol_record_index"] => <...>
+                public static Dictionary<string, settings.item.SimpleItemBase> itemBaseRowMapping;
 
                 // ["detail, series, position"] => [propType] => [level] => <...>
                 // position :: 0 - hide, 1 - show
@@ -86,6 +98,9 @@ namespace game.resource
 
                 // [rowIndex] => <...>
                 public static Dictionary<int, settings.item.GoldEquipBase> goldEquipBase;
+
+                // [rowIndex] => <...>
+                public static Dictionary<int, settings.item.GoldEquipBase> platinaEquipBase;
 
                 // [goldEquipBase.rowIndex> => <...>
                 public static Dictionary<int, settings.item.GoldResBase> goldEquipRes;
@@ -110,6 +125,7 @@ namespace game.resource
             {
                 public static Dictionary<int, string> declareRowIndexToResTypeMapping; // declare_row_index => NpcResType
                 public static Dictionary<int, int> declareRowIndexToStatureMapping; // declare_row_index => stature
+                public static Dictionary<int, settings.Npcs.MotionProfile> declareRowIndexToMotionProfileMapping; // declare_row_index => movement frames/speed
             }
 
             public struct Skill

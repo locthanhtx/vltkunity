@@ -231,7 +231,7 @@ public class MainCanvas : MonoBehaviour
     /// </summary>
     public void OpenBag()
     {
-        //world.GetUserInterface().panelEquipment.current.SetActive(true);
+        PopUpCanvas.instance?.OpenStorage();
     }
 
 

@@ -8,14 +8,52 @@ namespace game.resource.settings.item
         public Initialize()
         {
             Cache.Settings.Item.appearanceParsedMapping = Initialize.AppearanceParser(Initialize.LoadTableList(item.Listing.Appearance()));
+            Cache.Settings.Item.equipmentBaseRowMapping = new Dictionary<string, EquipmentBase>();
             Cache.Settings.Item.equipmentBaseMapping = Initialize.EquipmentParser(settings.item.Listing.Equipment());
             Cache.Settings.Item.maskEquipBase = Initialize.MaskEquipParser(mapping.settings.Item.mask);
+            Cache.Settings.Item.itemBaseMapping = new Dictionary<string, SimpleItemBase>();
+            Cache.Settings.Item.itemBaseLevelMapping = new Dictionary<string, SimpleItemBase>();
+            Cache.Settings.Item.itemBaseRowMapping = new Dictionary<string, SimpleItemBase>();
+            Initialize.SimpleItemBaseParser(settings.item.Listing.SimpleItem());
             Cache.Settings.Item.magicAttribBaseMapping = Initialize.MagicAttribParser(mapping.settings.Item.magicattrib);
             Cache.Settings.Item.goldEquipBase = Initialize.GoldEquipBaseParser(mapping.settings.Item.goldEquip);
+            Cache.Settings.Item.platinaEquipBase = Initialize.PlatinaEquipBaseParser(mapping.settings.Item.platinaEquip);
             Cache.Settings.Item.goldMagicBase = Initialize.GoldMagicBaseParser(mapping.settings.Item.magicattrib_ge);
             //Cache.Settings.Item.goldEquipRes = Initialize.GoldEquipResParser(mapping.settings.Item.goldEquipRes); // FIXME: native crash SIGSEGV in PluginApi.b
             Cache.Settings.Item.goldEquipRes = new System.Collections.Generic.Dictionary<int, GoldResBase>();
             //Cache.Settings.Item.magicScriptBase = Initialize.MagicScriptBaseParser(mapping.settings.Item.magicScript);
+        }
+
+        private static void SimpleItemBaseParser(Dictionary<string, SimpleItemKind> tableList)
+        {
+            foreach (KeyValuePair<string, SimpleItemKind> tableEntry in tableList)
+            {
+                resource.Table fileTable = Game.Resource(tableEntry.Key).Get<resource.Table>();
+
+                if (fileTable.IsEmpty())
+                {
+                    UnityEngine.Debug.LogWarning("Item simple table missing or empty: " + tableEntry.Key);
+                    continue;
+                }
+
+                for (int rowIndex = 1; rowIndex < fileTable.RowCount; rowIndex++)
+                {
+                    SimpleItemBase itemBase = new SimpleItemBase();
+                    itemBase.Load(fileTable, rowIndex, tableEntry.Value);
+
+                    if (string.IsNullOrEmpty(itemBase.name)
+                        && itemBase.genre <= 0
+                        && itemBase.detail <= 0
+                        && itemBase.particular <= 0)
+                    {
+                        continue;
+                    }
+
+                    Cache.Settings.Item.itemBaseMapping[itemBase.GetKeyGDP()] = itemBase;
+                    Cache.Settings.Item.itemBaseLevelMapping[itemBase.GetKeyGDPL()] = itemBase;
+                    Cache.Settings.Item.itemBaseRowMapping[itemBase.GetRowKey()] = itemBase;
+                }
+            }
         }
 
         private static Dictionary<string, settings.item.MagicScriptBase> MagicScriptBaseParser(string filePath)
@@ -149,6 +187,27 @@ namespace game.resource.settings.item
             return result;
         }
 
+        private static Dictionary<int, settings.item.GoldEquipBase> PlatinaEquipBaseParser(string filePath)
+        {
+            Dictionary<int, settings.item.GoldEquipBase> result = new Dictionary<int, GoldEquipBase>();
+            resource.Table fileTable = Game.Resource(filePath).Get<resource.Table>();
+
+            if (fileTable.IsEmpty())
+            {
+                UnityEngine.Debug.LogWarning(filePath);
+                return result;
+            }
+
+            for (int rowIndex = 1; rowIndex < fileTable.RowCount; rowIndex++)
+            {
+                settings.item.GoldEquipBase platinaBase = new GoldEquipBase();
+                ((settings.item.EquipmentBase)platinaBase).Load(fileTable, rowIndex);
+                result[rowIndex] = platinaBase;
+            }
+
+            return result;
+        }
+
         private static Dictionary<string, Dictionary<int, Dictionary<int, settings.item.MagicattribBase>>> MagicAttribParser(string filePath)
         {
             // ["detail, series, position"] => [propType] => [level] => <...>
@@ -208,6 +267,7 @@ namespace game.resource.settings.item
                     equipmentBase.Load(fileTable, rowIndex);
 
                     result[equipmentBase.GetKeyGDPL()] = equipmentBase;
+                    Cache.Settings.Item.equipmentBaseRowMapping[equipmentBase.GetDetailRowKey()] = equipmentBase;
                 }
             }
 

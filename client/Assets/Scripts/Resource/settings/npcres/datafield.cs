@@ -351,6 +351,12 @@ namespace game.resource.settings.npcres
         public bool m_IsMoreAura;
         public skillAuraInfo[] m_TmpAuraID;
 
+        public int m_StandFrame;
+        public int m_WalkFrame;
+        public int m_RunFrame;
+        public int m_DeathFrame;
+        public int m_HurtFrame;
+
         public npcres.SkillList m_SkillList;
         public Dictionary<int, CEnhanceInfo> nEnhanceInfo;
 
@@ -404,6 +410,16 @@ namespace game.resource.settings.npcres
 
             this.m_SkillList = new SkillList();
             this.nEnhanceInfo = new Dictionary<int, CEnhanceInfo>();
+
+            this.m_WalkSpeed = 5;
+            this.m_RunSpeed = 10;
+            this.m_CurrentWalkSpeed = this.m_WalkSpeed;
+            this.m_CurrentRunSpeed = this.m_RunSpeed;
+            this.m_StandFrame = 15;
+            this.m_WalkFrame = 15;
+            this.m_RunFrame = 15;
+            this.m_DeathFrame = 15;
+            this.m_HurtFrame = 10;
         }
 
         public void ChangeCurDexterity(int nData)

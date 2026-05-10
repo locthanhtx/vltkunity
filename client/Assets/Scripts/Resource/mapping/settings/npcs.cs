@@ -3,11 +3,12 @@ namespace game.resource.mapping.settings
 {
     struct Npcs
     {
-        public const string fileFullPath = "\\settings\\npcs.txt";
+        public const string fileFullPath = "\\settings\\NpcS.txt";
 
         public enum HeaderIndexer
         {
-            Name = 0,
+            Index = 0,
+            Name,
             Kind,
             Camp,
             Series,

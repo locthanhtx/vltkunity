@@ -139,38 +139,30 @@ namespace game.resource
         {
             string value = this.GetString(_headerKey, _rowIndex);
 
-            if (value == string.Empty)
-            {
-                return -1;
-            }
-
-            value = Regex.Replace(value, "[^0-9-]", string.Empty);
-
-            if(value == string.Empty)
-            {
-                return -1;
-            }
-
-            return int.Parse(value);
+            return Table.ParseIntOrDefault(value, -1);
         }
 
         private int GetInt(int _columnIndex, int _rowIndex, int _default)
         {
             string value = this.GetString(_columnIndex, _rowIndex);
 
-            if (value == string.Empty)
+            return Table.ParseIntOrDefault(value, _default);
+        }
+
+        private static int ParseIntOrDefault(string value, int defaultValue)
+        {
+            if (string.IsNullOrEmpty(value))
             {
-                return _default;
+                return defaultValue;
             }
 
-            value = Regex.Replace(value, "[^0-9-]", string.Empty);
-
-            if (value == string.Empty)
+            Match match = Regex.Match(value, "-?\\d+");
+            if (!match.Success)
             {
-                return _default;
+                return defaultValue;
             }
 
-            return int.Parse(value);
+            return int.TryParse(match.Value, out int result) ? result : defaultValue;
         }
 
         public resource.Buffer.Encoding GetEncoding()

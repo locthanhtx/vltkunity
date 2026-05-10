@@ -24,6 +24,64 @@ namespace game.resource.settings.npcres.special
             { mapping.settings.NpcRes.WeaponAction.junpFly, 14 },
         };
 
+        private static Dictionary<string, int> actionNameColumnIndex;
+        private static bool actionNameColumnIndexLoaded;
+
+        private static int ResolveActionColumnIndex(string animationName)
+        {
+            if (string.IsNullOrEmpty(animationName))
+            {
+                return -1;
+            }
+
+            EnsureActionNameColumnIndex();
+
+            if (actionNameColumnIndex != null && actionNameColumnIndex.TryGetValue(animationName, out int columnIndex))
+            {
+                return columnIndex;
+            }
+
+            return -1;
+        }
+
+        private static void EnsureActionNameColumnIndex()
+        {
+            if (actionNameColumnIndexLoaded)
+            {
+                return;
+            }
+
+            actionNameColumnIndexLoaded = true;
+            actionNameColumnIndex = new();
+
+            resource.Table actionTable = Game.Resource(mapping.settings.NpcRes.ActionNumberTable.filePath).Get<resource.Table>();
+            if (actionTable == null || actionTable.IsEmpty())
+            {
+                UnityEngine.Debug.LogError(mapping.settings.NpcRes.ActionNumberTable.filePath);
+                return;
+            }
+
+            int actionNameColumn = actionTable.GetHeaderIndex(mapping.settings.NpcRes.ActionNumberTable.Header.actionName);
+            if (actionNameColumn < 0)
+            {
+                actionNameColumn = 0;
+            }
+
+            for (int rowIndex = 1; rowIndex < actionTable.RowCount; rowIndex++)
+            {
+                string actionName = actionTable.Get<string>(actionNameColumn, rowIndex);
+                if (string.IsNullOrEmpty(actionName))
+                {
+                    continue;
+                }
+
+                if (actionNameColumnIndex.ContainsKey(actionName) == false)
+                {
+                    actionNameColumnIndex[actionName] = rowIndex;
+                }
+            }
+        }
+
         private static int EquipTypeToTableRow(int equipType)
         {
             return equipType + 1;
@@ -283,7 +341,15 @@ namespace game.resource.settings.npcres.special
 
             resource.Table sprTable = _tableMapping[_partName];
             int rowIndex = EquipTypeToTableRow(_rowIndex);
-            string sprFile = sprTable.Get<string>(_animationName, rowIndex);
+            int actionColumnIndex = ResolveActionColumnIndex(_animationName);
+            string sprFile = actionColumnIndex >= 0
+                ? sprTable.Get<string>(actionColumnIndex, rowIndex)
+                : string.Empty;
+
+            if (string.IsNullOrEmpty(sprFile))
+            {
+                sprFile = sprTable.Get<string>(_animationName, rowIndex);
+            }
 
             if (sprFile.Length <= 0)
             {
@@ -334,7 +400,14 @@ namespace game.resource.settings.npcres.special
             }
 
             resource.Table sprPropertiesTable = _propertiesMapping[_partName];
-            string sprPropertiesString = sprPropertiesTable.Get<string>(_animationName, rowIndex);
+            string sprPropertiesString = actionColumnIndex >= 0
+                ? sprPropertiesTable.Get<string>(actionColumnIndex, rowIndex)
+                : string.Empty;
+            if (string.IsNullOrEmpty(sprPropertiesString))
+            {
+                sprPropertiesString = sprPropertiesTable.Get<string>(_animationName, rowIndex);
+            }
+
             settings.npcres.Structures.PartSprInfo result = new()
             {
                 sprFullPath = sprFile,
@@ -469,7 +542,8 @@ namespace game.resource.settings.npcres.special
 
             result.frameBegin = (ushort)(result.framePerDirection * (_direction - 1));
             result.frameEnd = (ushort)(result.frameBegin + result.framePerDirection - 1);
-            result.framePerSeconds = _speed * partSprInfo.intervalRatio;
+            result.framePerSeconds = _speed;
+            result.frameIntervalTicks = partSprInfo.intervalRatio > 0 ? partSprInfo.intervalRatio : 1;
             result.layerOrder = special.Getters.PartOrder(_specialType, _partName, _animationName, _direction);
 
             return result;
@@ -521,7 +595,8 @@ namespace game.resource.settings.npcres.special
 
             result.frameBegin = (ushort)(result.framePerDirection * (_direction - 1));
             result.frameEnd = (ushort)(result.frameBegin + result.framePerDirection - 1);
-            result.framePerSeconds = _speed * partSprInfo.intervalRatio;
+            result.framePerSeconds = _speed;
+            result.frameIntervalTicks = partSprInfo.intervalRatio > 0 ? partSprInfo.intervalRatio : 1;
             result.layerOrder = special.Getters.PartOrder(_specialType, mapping.settings.NpcRes.Shadow.partName, _animationName, _direction);
 
             return result;

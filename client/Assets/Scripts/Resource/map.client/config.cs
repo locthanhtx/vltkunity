@@ -56,6 +56,13 @@ namespace game.resource.map
             *	@param 0: không
             */
             public int drawObstacleGrid;
+
+            /**
+            *	@brief vẽ toàn bộ map một lần thay vì chỉ vẽ vùng quanh camera
+            *	@param 1: có
+            *	@param 0: không
+            */
+            public int drawFullMap;
         }
 
         public struct Identification

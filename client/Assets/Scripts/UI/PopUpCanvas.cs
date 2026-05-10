@@ -126,6 +126,7 @@ public class PopUpCanvas : MonoBehaviour
     {
         if (SkillPannel != null)
         {
+            SkillPannel.GetComponent<PlayerSkills>()?.RefreshSkills();
             SkillPannel.SetActive(true);
         }
     }
@@ -161,14 +162,20 @@ public class PopUpCanvas : MonoBehaviour
 
     public void OpenStorage()
     {
-/*
         if (Storage != null)
         {
             Storage.SetActive(true);
+            Storage.GetComponent<Storage>().InitStorage();
             Storage.GetComponent<Storage>().SetUpPlayerItem();
-            PlayerMain.instance.viewportItem.current.transform.SetParent(gameObject.transform);
         }
-*/
+    }
+
+    public void RefreshStorageIfOpen()
+    {
+        if (Storage != null && Storage.activeInHierarchy)
+        {
+            Storage.GetComponent<Storage>().SetUpPlayerItem();
+        }
     }
 
     public void OpenTrade()

@@ -36,6 +36,11 @@ public class Trade : MonoBehaviour
 
     public void InitStorage()
     {
+        if (ListBags.Count > 0 || ListTrades.Count > 0 || ListTradeFriends.Count > 0)
+        {
+            return;
+        }
+
         for (int i = 0; i < 12; i++)
         {
             GridLayoutGroup gridLayoutGroup = ListTradeFriend.GetComponent<GridLayoutGroup>();
@@ -67,7 +72,7 @@ public class Trade : MonoBehaviour
         {
             ItemData itemData = data.Value;
 
-            if (itemData.Local != (byte)ItemPosition.pos_equip)
+            if (ItemUiMapper.IsBagItem(itemData))
             {
                 itemDataBags.Add(itemData);
             }
@@ -76,48 +81,61 @@ public class Trade : MonoBehaviour
         //TextBags.text = itemDataBags.Count + "/" + ListBags.Count;
         //TextStorages.text = itemDataStorages.Count + "/" + ListStorages.Count;
 
+        ClearCells(ListBags);
+        HashSet<int> usedBagSlots = new();
         for (int i = 0; i < itemDataBags.Count; i++)
         {
-            Item item = RestoreItemFromDatabase(itemDataBags[i]);
-            GameObject itemBag = ListBags[i];
-            itemBag.GetComponent<EquimentItem>().SetItemEquiment(item);
+            PlaceItem(ListBags, usedBagSlots, itemDataBags[i], i);
         }
     }
 
     Item RestoreItemFromDatabase(ItemData itemdata)
     {
-        game.resource.settings.item.Database itemDatabase = new()
-        {
-            genre = itemdata.Equipclasscode, // settings/meleeweapon.txt
-            detail = itemdata.Detailtype, // settings/meleeweapon.txt
-            particular = itemdata.Particulartype, // settings/meleeweapon.txt
-            level = itemdata.Level, // cấp 10
-            series = itemdata.Series, // hệ kim
-            //databaseId = itemdata.Id,
-            //type = itemdata.Goldid > 0 ? Defination.Type.goldEquip : Defination.Type.normalEquip,
-            //rowIndex = itemdata.Goldid,
-        };
-/*
-        List<MagicAttribute> magicAttributes = new(itemdata.Magics);
-        magicAttributes.Sort((a, b) => a.AttributeIndex.CompareTo(b.AttributeIndex));
+        return ItemUiMapper.RestoreItem(itemdata);
+    }
 
-        for (int i = 0; i < magicAttributes.Count; i++)
+    private static void ClearCells(Dictionary<int, GameObject> cells)
+    {
+        foreach (GameObject cell in cells.Values)
         {
-            if (magicAttributes[i] != null)
+            cell.GetComponent<EquimentItem>()?.ClearItem();
+        }
+    }
+
+    private void PlaceItem(Dictionary<int, GameObject> cells, HashSet<int> usedSlots, ItemData itemData, int fallbackIndex)
+    {
+        int slot = ItemUiMapper.GetBagSlot(itemData);
+        if (slot < 0 || !cells.ContainsKey(slot) || usedSlots.Contains(slot))
+        {
+            slot = FindFreeSlot(cells, usedSlots, fallbackIndex);
+        }
+
+        if (slot < 0 || !cells.TryGetValue(slot, out GameObject itemBag))
+        {
+            return;
+        }
+
+        usedSlots.Add(slot);
+        Item item = RestoreItemFromDatabase(itemData);
+        itemBag.GetComponent<EquimentItem>().SetItemEquiment(item, slot, itemData);
+    }
+
+    private static int FindFreeSlot(Dictionary<int, GameObject> cells, HashSet<int> usedSlots, int preferredIndex)
+    {
+        if (cells.ContainsKey(preferredIndex) && !usedSlots.Contains(preferredIndex))
+        {
+            return preferredIndex;
+        }
+
+        foreach (int slot in cells.Keys)
+        {
+            if (!usedSlots.Contains(slot))
             {
-                var fieldType = itemDatabase.GetType();
-                var field = fieldType.GetField(string.Format("magic{0}Type", i));
-                field.SetValue(itemDatabase, magicAttributes[i].AttributeType);
-                field = fieldType.GetField(string.Format("magic{0}Value0", i));
-                field.SetValue(itemDatabase, magicAttributes[i].Value0);
-                field = fieldType.GetField(string.Format("magic{0}Value1", i));
-                field.SetValue(itemDatabase, magicAttributes[i].Value1);
-                field = fieldType.GetField(string.Format("magic{0}Value2", i));
-                field.SetValue(itemDatabase, magicAttributes[i].Value2);
+                return slot;
             }
         }
-*/
-        return new(itemDatabase);
+
+        return -1;
     }
 
 }

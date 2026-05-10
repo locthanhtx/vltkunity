@@ -17,9 +17,26 @@ namespace game.resource.settings.item
                 mapping.settings.Item.helm,
                 mapping.settings.Item.horse,
                 mapping.settings.Item.meleeweapon,
+                mapping.settings.Item.mask,
                 mapping.settings.Item.pendant,
+                mapping.settings.Item.pifeng,
                 mapping.settings.Item.rangeweapon,
                 mapping.settings.Item.ring,
+                mapping.settings.Item.shipin,
+                mapping.settings.Item.yinjian,
+            };
+        }
+
+        public static Dictionary<string, SimpleItemKind> SimpleItem()
+        {
+            return new Dictionary<string, SimpleItemKind>()
+            {
+                { mapping.settings.Item.potion, SimpleItemKind.Medicine },
+                { mapping.settings.Item.mine, SimpleItemKind.Mine },
+                { mapping.settings.Item.questKey, SimpleItemKind.Quest },
+                { mapping.settings.Item.fusion, SimpleItemKind.Fusion },
+                { mapping.settings.Item.townPortal, SimpleItemKind.TownPortal },
+                { mapping.settings.Item.medMaterialBase, SimpleItemKind.MedMaterial },
             };
         }
 

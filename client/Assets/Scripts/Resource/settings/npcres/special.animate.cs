@@ -161,16 +161,16 @@ namespace game.resource.settings.npcres.special
 
         public Dictionary<string, npcres.Structures.PartAnimation> SyncDirection(int _direction)
         {
-            settings.npcres.Structures.PartSprInfo partSprInfo = special.Getters.PartSprInfo(this.characterType, NpcRes.PartGroup.body, this.animation, this.partGroupRowIndex.body);
-            if (partSprInfo.directionCount <= 0)
+            int directionCount = this.ResolveDirectionCount();
+            if (directionCount <= 0)
             {
                 return new();
             }
 
-            _direction = (_direction + (32 / partSprInfo.directionCount)) / (64 / partSprInfo.directionCount);
-            if (_direction >= partSprInfo.directionCount)
+            _direction = (_direction + (32 / directionCount)) / (64 / directionCount);
+            if (_direction >= directionCount)
             {
-                _direction -= partSprInfo.directionCount;
+                _direction -= directionCount;
             }
             _direction++;
 
@@ -180,6 +180,58 @@ namespace game.resource.settings.npcres.special
         }
 
         public int GetDirection() => this.direction;
+
+        private int ResolveDirectionCount()
+        {
+            int directionCount = this.ResolvePartGroupDirectionCount(NpcRes.PartGroup.body, this.partGroupRowIndex.body);
+            if (directionCount > 0)
+            {
+                return directionCount;
+            }
+
+            directionCount = this.ResolvePartGroupDirectionCount(NpcRes.PartGroup.head, this.partGroupRowIndex.head);
+            if (directionCount > 0)
+            {
+                return directionCount;
+            }
+
+            directionCount = this.ResolvePartGroupDirectionCount(NpcRes.PartGroup.weapon, this.partGroupRowIndex.weapon);
+            if (directionCount > 0)
+            {
+                return directionCount;
+            }
+
+            if (this.riding && this.partGroupRowIndex.horse >= 0)
+            {
+                directionCount = this.ResolvePartGroupDirectionCount(NpcRes.PartGroup.horse, this.partGroupRowIndex.horse);
+                if (directionCount > 0)
+                {
+                    return directionCount;
+                }
+            }
+
+            return 0;
+        }
+
+        private int ResolvePartGroupDirectionCount(string partGroup, int rowIndex)
+        {
+            if (rowIndex < 0)
+            {
+                return 0;
+            }
+
+            foreach (string partName in npcres.special.Getters.PartGroup(this.characterType, partGroup))
+            {
+                settings.npcres.Structures.PartSprInfo partSprInfo =
+                    npcres.special.Getters.PartSprInfo(this.characterType, partName, this.animation, rowIndex);
+                if (partSprInfo.directionCount > 0)
+                {
+                    return partSprInfo.directionCount;
+                }
+            }
+
+            return 0;
+        }
 
         public Dictionary<string, npcres.Structures.PartAnimation> SetRiding(bool _riding)
         {

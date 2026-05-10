@@ -9,6 +9,8 @@ namespace game.network.jx
         public const int RunTargetDistanceMultiplier = 6;
         public const int DefaultWalkSpeed = 5;
         public const int DefaultRunSpeed = 10;
+        public const int DefaultWalkFrame = 15;
+        public const int DefaultRunFrame = 15;
         public const int MaxClassicMoveSpeed = 31;
 
         private const float MinMoveDuration = 1f / 60f;
@@ -56,6 +58,42 @@ namespace game.network.jx
             {
                 controller.data.m_CurrentRunSpeed = NormalizeRunSpeed(controller.data.m_CurrentRunSpeed);
             }
+
+            if (controller.data.m_WalkFrame <= 0)
+            {
+                controller.data.m_WalkFrame = DefaultWalkFrame;
+            }
+
+            if (controller.data.m_RunFrame <= 0)
+            {
+                controller.data.m_RunFrame = DefaultRunFrame;
+            }
+        }
+
+        public static int GetWalkAnimationTotalFrame(game.resource.settings.npcres.Controller controller, int currentWalkSpeed)
+        {
+            EnsureBaseSpeed(controller);
+
+            int baseWalkSpeed = NormalizeWalkSpeed(controller?.data.m_WalkSpeed ?? DefaultWalkSpeed);
+            int walkSpeed = NormalizeWalkSpeed(currentWalkSpeed > 0 ? currentWalkSpeed : GetCurrentWalkSpeed(controller));
+            int walkFrame = Math.Max(1, controller?.data.m_WalkFrame ?? DefaultWalkFrame);
+            return Math.Max(1, (walkFrame * baseWalkSpeed) / walkSpeed + 1);
+        }
+
+        public static int GetRunAnimationTotalFrame(game.resource.settings.npcres.Controller controller, int currentRunSpeed)
+        {
+            EnsureBaseSpeed(controller);
+
+            int baseRunSpeed = NormalizeRunSpeed(controller?.data.m_RunSpeed ?? DefaultRunSpeed);
+            int runSpeed = NormalizeRunSpeed(currentRunSpeed > 0 ? currentRunSpeed : GetCurrentRunSpeed(controller));
+            int runFrame = Math.Max(1, controller?.data.m_RunFrame ?? DefaultRunFrame);
+            int maxRunSpeedForFrame = runFrame * baseRunSpeed;
+            if (runSpeed > maxRunSpeedForFrame)
+            {
+                return runFrame;
+            }
+
+            return Math.Max(1, (runFrame * baseRunSpeed) / runSpeed);
         }
 
         public static void ApplyCurrentSpeed(

@@ -79,6 +79,9 @@ namespace game.resource.settings.npcres
         protected readonly npcres.Damage damage;
         private bool notUpdate = false;
         protected bool initIsSpecial;
+        private int drivenTotalFrame;
+        private int drivenCurrentFrame;
+        private int drivenLastTick = -1;
 
         ////////////////////////////////////////////////////////////////////////////////
 
@@ -100,18 +103,21 @@ namespace game.resource.settings.npcres
         {
             this.animate.isSpecialNpc = true;
             this.animate.special = new npcres.special.Animate(this.identify, this.state, characterType, direction, action, headIndex, bodyIndex, weaponIndex, horseIndex);
+            settings.Npcs.ApplyPlayerMotionProfile(this.data, characterType);
         }
 
         protected void InitForNormal()
         {
             this.animate.isSpecialNpc = false;
             this.animate.normal = new npcres.normal.Animate(this.identify, this.state);
+            settings.Npcs.ApplyNpcMotionProfile(this.data, this.animate.normal.GetDeclareLine());
         }
 
         protected void InitForNormal(int npcDeclareLine, string actionName = mapping.settings.NpcRes.WeaponAction.normalStand1, int direction = 1)
         {
             this.animate.isSpecialNpc = false;
             this.animate.normal = new npcres.normal.Animate(this.identify, this.state, npcDeclareLine, actionName, direction);
+            settings.Npcs.ApplyNpcMotionProfile(this.data, npcDeclareLine);
         }
 
         public void Destroy()
@@ -146,7 +152,9 @@ namespace game.resource.settings.npcres
                     continue;
                 }
 
-                currentFrameIndex = partPair.Value.GetNowFrameIndex(delta);
+                currentFrameIndex = this.drivenTotalFrame > 0
+                    ? partPair.Value.GetFrameIndex(this.drivenTotalFrame, this.drivenCurrentFrame)
+                    : partPair.Value.GetNowFrameIndex(delta);
                 endFrameIndex = partPair.Value.frameEnd;
 
                 npcres.Shape.PartFields part = this.shape.GetPartFields(partPair.Key);
@@ -201,7 +209,87 @@ namespace game.resource.settings.npcres
                 notUpdate = false;
             }
 
+            if (!IsMoveAction(_actionName))
+            {
+                this.ClearDrivenFrame();
+            }
+            else if (_actionName != currentAction)
+            {
+                this.ResetDrivenFrame();
+            }
+
             this.shape.InValidPartList(this.animate.SetAction(_actionName));
+        }
+
+        private static bool IsMoveAction(string actionName)
+        {
+            return actionName == settings.NpcRes.Action.normalWalk ||
+                   actionName == settings.NpcRes.Action.fightWalk ||
+                   actionName == settings.NpcRes.Action.normalRun ||
+                   actionName == settings.NpcRes.Action.fightRun;
+        }
+
+        public void SetDrivenFrame(int totalFrame, int currentFrame)
+        {
+            if (totalFrame <= 0)
+            {
+                this.ClearDrivenFrame();
+                return;
+            }
+
+            this.drivenTotalFrame = totalFrame;
+            this.drivenCurrentFrame = UnityEngine.Mathf.Clamp(currentFrame, 0, totalFrame - 1);
+            this.drivenLastTick = GetCurrentCoreTick();
+        }
+
+        public void AdvanceDrivenFrame(int totalFrame)
+        {
+            if (totalFrame <= 0)
+            {
+                this.ClearDrivenFrame();
+                return;
+            }
+
+            int currentTick = GetCurrentCoreTick();
+            if (this.drivenTotalFrame != totalFrame)
+            {
+                this.drivenTotalFrame = totalFrame;
+                this.drivenCurrentFrame %= totalFrame;
+            }
+
+            if (this.drivenLastTick < 0)
+            {
+                this.drivenLastTick = currentTick;
+                return;
+            }
+
+            int elapsedTicks = currentTick - this.drivenLastTick;
+            if (elapsedTicks <= 0)
+            {
+                return;
+            }
+
+            this.drivenCurrentFrame = (this.drivenCurrentFrame + elapsedTicks) % this.drivenTotalFrame;
+            this.drivenLastTick = currentTick;
+        }
+
+        public void ClearDrivenFrame()
+        {
+            this.drivenTotalFrame = 0;
+            this.drivenCurrentFrame = 0;
+            this.drivenLastTick = -1;
+        }
+
+        private void ResetDrivenFrame()
+        {
+            this.drivenTotalFrame = 0;
+            this.drivenCurrentFrame = 0;
+            this.drivenLastTick = GetCurrentCoreTick();
+        }
+
+        private static int GetCurrentCoreTick()
+        {
+            return UnityEngine.Mathf.FloorToInt(UnityEngine.Time.timeSinceLevelLoad * resource.SPR.FPS);
         }
 
         ////////////////////////////////////////////////////////////////////////////////

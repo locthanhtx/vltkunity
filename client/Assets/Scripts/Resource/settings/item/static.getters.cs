@@ -30,24 +30,128 @@ namespace game.resource.settings.item
         {
             string key = string.Empty + g + ", " + d + ", " + p + ", " + l;
 
-            if (Cache.Settings.Item.equipmentBaseMapping.ContainsKey(key) == false)
+            if (Cache.Settings.Item.equipmentBaseMapping != null
+                && Cache.Settings.Item.equipmentBaseMapping.ContainsKey(key))
+            {
+                return Cache.Settings.Item.equipmentBaseMapping[key];
+            }
+
+            if (Cache.Settings.Item.equipmentBaseRowMapping == null)
             {
                 return null;
             }
 
-            return Cache.Settings.Item.equipmentBaseMapping[key];
+            int level = System.Math.Max(1, l);
+            int axmolRecordIndex = d == (int)Defination.Detail.equip_mask
+                ? p
+                : (p * 10) + level - 1;
+            string rowKey = settings.item.EquipmentBase.MakeDetailRowKey(d, axmolRecordIndex);
+
+            return Cache.Settings.Item.equipmentBaseRowMapping.ContainsKey(rowKey)
+                ? Cache.Settings.Item.equipmentBaseRowMapping[rowKey]
+                : null;
         }
 
         public static settings.item.EquipmentBase GetMaskBase(int g, int d, int p)
         {
             string key = string.Empty + g + ", " + d + ", " + p;
 
-            if(Cache.Settings.Item.maskEquipBase.ContainsKey(key) == false)
+            if(Cache.Settings.Item.maskEquipBase == null
+                || Cache.Settings.Item.maskEquipBase.ContainsKey(key) == false)
             {
                 return null;
             }
 
             return Cache.Settings.Item.maskEquipBase[key];
+        }
+
+        public static settings.item.SimpleItemBase GetSimpleItemBase(int g, int d, int p, int l)
+        {
+            if (Cache.Settings.Item.itemBaseLevelMapping == null
+                || Cache.Settings.Item.itemBaseMapping == null)
+            {
+                return null;
+            }
+
+            string levelKey = settings.item.SimpleItemBase.MakeKeyGDPL(g, d, p, l);
+            if (Cache.Settings.Item.itemBaseLevelMapping.ContainsKey(levelKey))
+            {
+                return Cache.Settings.Item.itemBaseLevelMapping[levelKey];
+            }
+
+            string key = settings.item.SimpleItemBase.MakeKeyGDP(g, d, p);
+            if (Cache.Settings.Item.itemBaseMapping.ContainsKey(key))
+            {
+                return Cache.Settings.Item.itemBaseMapping[key];
+            }
+
+            if (g == (int)Defination.Genre.item_medicine)
+            {
+                int rowIndex = (d * 5) + System.Math.Max(1, l) - 1;
+                settings.item.SimpleItemBase rowItem = GetSimpleItemBaseByRow(g, rowIndex);
+                if (rowItem != null)
+                {
+                    return rowItem;
+                }
+            }
+            else if (g == (int)Defination.Genre.item_task)
+            {
+                settings.item.SimpleItemBase rowItem = GetSimpleItemBaseByRow(g, d);
+                if (rowItem != null)
+                {
+                    return rowItem;
+                }
+
+                key = settings.item.SimpleItemBase.MakeKeyGDP(g, d, 0);
+                if (Cache.Settings.Item.itemBaseMapping.ContainsKey(key))
+                {
+                    return Cache.Settings.Item.itemBaseMapping[key];
+                }
+            }
+            else if (g == (int)Defination.Genre.item_mine)
+            {
+                settings.item.SimpleItemBase rowItem = GetSimpleItemBaseByRow(g, p);
+                if (rowItem != null)
+                {
+                    return rowItem;
+                }
+
+                rowItem = GetSimpleItemBaseByRow(g, d);
+                if (rowItem != null)
+                {
+                    return rowItem;
+                }
+            }
+            else if (g == (int)Defination.Genre.item_fusion)
+            {
+                settings.item.SimpleItemBase rowItem = GetSimpleItemBaseByRow(g, p);
+                if (rowItem != null)
+                {
+                    return rowItem;
+                }
+            }
+            else if (g == (int)Defination.Genre.item_townportal)
+            {
+                return GetSimpleItemBaseByRow(g, 0);
+            }
+
+            return null;
+        }
+
+        public static settings.item.SimpleItemBase GetSimpleItemBaseByRow(int g, int rowIndex)
+        {
+            if (Cache.Settings.Item.itemBaseRowMapping == null)
+            {
+                return null;
+            }
+
+            string rowKey = settings.item.SimpleItemBase.MakeRowKey(g, rowIndex);
+            if (Cache.Settings.Item.itemBaseRowMapping.ContainsKey(rowKey) == false)
+            {
+                return null;
+            }
+
+            return Cache.Settings.Item.itemBaseRowMapping[rowKey];
         }
 
         public static settings.item.MagicScriptBase GetMagicScriptBase(int g, int d, int p)
@@ -81,12 +185,24 @@ namespace game.resource.settings.item
 
         public static settings.item.GoldEquipBase GetGoldEquipBase(int index)
         {
-            if(Cache.Settings.Item.goldEquipBase.ContainsKey(index) == false)
+            if(Cache.Settings.Item.goldEquipBase == null
+                || Cache.Settings.Item.goldEquipBase.ContainsKey(index) == false)
             {
                 return null;
             }
 
             return Cache.Settings.Item.goldEquipBase[index];
+        }
+
+        public static settings.item.GoldEquipBase GetPlatinaEquipBase(int index)
+        {
+            if (Cache.Settings.Item.platinaEquipBase == null
+                || Cache.Settings.Item.platinaEquipBase.ContainsKey(index) == false)
+            {
+                return null;
+            }
+
+            return Cache.Settings.Item.platinaEquipBase[index];
         }
 
         public static settings.item.GoldMagicBase GetGoldMagicBase(int index)

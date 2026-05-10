@@ -25,7 +25,7 @@ class Game
         game.resource.settings.Item.Initialize();
         game.resource.settings.Npcs.Initialize();
         game.resource.settings.Skill.Initialize();
-        //game.resource.settings.MagicDesc.Initialize();
+        game.resource.settings.MagicDesc.Initialize();
         game.resource.settings.Music.Initialize();
         stopwatch.Stop();
         UnityEngine.Debug.Log("game.resource.settings.<...>.Initialize --> performance: " + stopwatch.ElapsedMilliseconds + " milliseconds");

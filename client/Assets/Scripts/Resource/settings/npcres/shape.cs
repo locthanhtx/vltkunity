@@ -130,28 +130,29 @@ namespace game.resource.settings.npcres
             return updatePartFrame;
         }
 
-        public void InValidPart(string _partName)
+        public void InValidPart(string _partName, bool deactivate = true)
         {
             if (this.partFields.ContainsKey(_partName)
                 && this.partFields[_partName].isValid == true)
             {
                 npcres.Shape.PartFields updatePartFields = this.partFields[_partName];
-                updatePartFields.gameObject.SetActive(false);
-                updatePartFields.isValid = false;
-            }
-            else
-            {
-                return;
+                if (deactivate)
+                {
+                    updatePartFields.gameObject.SetActive(false);
+                    updatePartFields.isValid = false;
+                }
             }
 
             this.partFrame.Remove(_partName);
         }
 
-        public void InValidPartList(Dictionary<string, game.resource.settings.npcres.Structures.PartAnimation> _partList)
+        public void InValidPartList(
+            Dictionary<string, game.resource.settings.npcres.Structures.PartAnimation> _partList,
+            bool deactivate = false)
         {
             foreach (KeyValuePair<string, game.resource.settings.npcres.Structures.PartAnimation> partPair in _partList)
             {
-                this.InValidPart(partPair.Key);
+                this.InValidPart(partPair.Key, deactivate);
             }
         }
     }

@@ -32,7 +32,7 @@ namespace game.resource
             this.appearance = new UnityEngine.GameObject(typeof(game.resource.Map).FullName);
 
             this.info = new settings.MapList.MapInfo();
-            this.textureConfig = new map.Config.Textures(){ radiusHorizontalVisibility = 400, radiusVerticalVisibility = 300, nodePrefetchRadius = 1, drawGroundNode = 1, drawGroundObject = 1, drawBuilding = 1, drawTree = 1, drawObstacleGrid = 0 };
+            this.textureConfig = new map.Config.Textures(){ radiusHorizontalVisibility = 400, radiusVerticalVisibility = 300, nodePrefetchRadius = 1, drawGroundNode = 1, drawGroundObject = 1, drawBuilding = 1, drawTree = 1, drawObstacleGrid = 0, drawFullMap = 0 };
             this.identifyConfig = new map.Config.Identification() { npcTitle = true, npcTong = true, npcName = true, npcHealth = true, npcMapPos = false };
             this.layer = new map.Layer(this.appearance);
             this.preparingCommand = new map.Preparing();
@@ -160,6 +160,13 @@ namespace game.resource
         public void SetTextureConfig(map.Config.Textures _mapConfig, bool clearMaptextures = true, bool clearSpecialNpc = false, bool clearNormalNpc = false) => this.preparingCommand.Reset(this.textureConfig = _mapConfig, this.info, clearMaptextures, clearSpecialNpc, clearNormalNpc);
 
         public map.Config.Textures GetTextureConfig() => this.textureConfig;
+
+        public void SetFullMapEnabled(bool enabled)
+        {
+            this.textureConfig.drawFullMap = enabled ? 1 : 0;
+            this.SetTextureConfig(this.textureConfig);
+            this.SetPosition(this.currentPosition);
+        }
 
         public void SetIdentifyConfig(map.Config.Identification identification) => this.textureCommand.SetIdentification(this.identifyConfig = identification);
 

@@ -168,6 +168,7 @@ namespace game.resource.map
 
         private map.Position.Grid currentGridPosition;
         private map.Position currentOriginPosition;
+        private bool fullMapLoaded;
 
         ////////////////////////////////////////////////////////////////////////////////
 
@@ -198,6 +199,7 @@ namespace game.resource.map
 
             this.currentGridPosition = new map.Position.Grid();
             this.currentOriginPosition = new map.Position();
+            this.fullMapLoaded = false;
 
             this.mainThreadHandle.Start();
         }
@@ -471,6 +473,12 @@ namespace game.resource.map
             map.Position centralOrigin = _command.originPosition;
             map.Position.Grid centralGrid = centralOrigin.GetGrid();
 
+            if (this.textureConfig.drawFullMap == 1)
+            {
+                this.MainThread_CentralFullMap(centralOrigin, centralGrid);
+                return;
+            }
+
             if (this.currentGridPosition.gridTop != centralGrid.gridTop
                 || this.currentGridPosition.gridLeft != centralGrid.gridLeft) {}
             else 
@@ -641,15 +649,7 @@ namespace game.resource.map
                                     break;
                             }
 
-                            commands.Add(new Textures.Command.AddNewTexture(
-                                asset.type, 
-                                "map: " + asset.originPosition.top + ", " + asset.originPosition.left + ", " + asset.order,
-                                asset.originPosition,
-                                gridPosition,
-                                DecodeTexturePath(asset.texturePathBuffer),
-                                asset.textureFrame,
-                                orderNumber
-                            ));
+                            commands.Add(this.CreateAddTextureCommand(asset, gridPosition, orderNumber));
                         }
                     }
                 }
@@ -767,6 +767,187 @@ namespace game.resource.map
             }
         }
 
+        private void MainThread_CentralFullMap(map.Position centralOrigin, map.Position.Grid centralGrid)
+        {
+            if (this.fullMapLoaded)
+            {
+                return;
+            }
+
+            List<map.Position.Sequential.Node> nodeList = this.BuildFullMapNodeList();
+            if (nodeList.Count <= 0)
+            {
+                return;
+            }
+
+            this.currentGridPosition = centralGrid;
+            this.currentOriginPosition = centralOrigin;
+
+            this.textureThread.PushParseNodes(new map.Textures.Command.NodeElements(this.mapInfo.rootPath, nodeList.ToArray(), this.textureConfig));
+
+            map.Element nodeElementsParsed;
+            lock (this.nodeElementsQueue)
+            {
+                System.Threading.Monitor.Wait(this.nodeElementsQueue);
+
+                if (this.nodeElementsQueue.Count <= 0)
+                {
+                    return;
+                }
+
+                nodeElementsParsed = this.nodeElementsQueue.Dequeue();
+            }
+
+            this.fullMapLoaded = true;
+
+            if (nodeElementsParsed.texture != null && nodeElementsParsed.texture.Length > 0)
+            {
+                List<map.Textures.Command.Element> commands = new List<Textures.Command.Element>();
+                foreach (map.Element.Texture asset in nodeElementsParsed.texture)
+                {
+                    commands.Add(this.CreateAddTextureCommand(asset));
+                }
+
+                this.textureThread.PushVector(commands);
+            }
+
+            if (nodeElementsParsed.obstacle != null && nodeElementsParsed.obstacle.Length > 0)
+            {
+                this.AddParsedObstacleData(nodeElementsParsed);
+            }
+        }
+
+        private List<map.Position.Sequential.Node> BuildFullMapNodeList()
+        {
+            List<map.Position.Sequential.Node> nodeList = new List<map.Position.Sequential.Node>();
+
+            int firstTop = this.mapInfo.worFile.rect.top * map.Static.nodeMapDimension;
+            int lastTop = this.mapInfo.worFile.rect.bottom * map.Static.nodeMapDimension;
+            int firstLeft = this.mapInfo.worFile.rect.left * map.Static.nodeMapDimension;
+            int lastLeft = this.mapInfo.worFile.rect.right * map.Static.nodeMapDimension;
+
+            for (int top = firstTop; top <= lastTop; top += map.Static.nodeMapDimension)
+            {
+                for (int left = firstLeft; left <= lastLeft; left += map.Static.nodeMapDimension)
+                {
+                    nodeList.Add(new map.Position.Sequential.Node(top, left));
+                }
+            }
+
+            return nodeList;
+        }
+
+        private Textures.Command.AddNewTexture CreateAddTextureCommand(map.Element.Texture asset)
+        {
+            int orderNumber = asset.order;
+            switch (asset.type)
+            {
+                case map.Element.TextureType.buildingUnder:
+                case map.Element.TextureType.buildingAbove:
+                case map.Element.TextureType.tree:
+                    orderNumber = asset.order << 1;
+                    break;
+            }
+
+            return this.CreateAddTextureCommand(asset, this.GetTextureGridPosition(asset), orderNumber);
+        }
+
+        private Textures.Command.AddNewTexture CreateAddTextureCommand(map.Element.Texture asset, map.Position.Grid gridPosition, int orderNumber)
+        {
+            string texturePath = DecodeTexturePath(asset.texturePathBuffer);
+            bool animated = BuildinAnimation.IsCandidate(asset);
+
+            return new Textures.Command.AddNewTexture(
+                asset.type,
+                "map: " + asset.originPosition.top + ", " + asset.originPosition.left + ", " + asset.order,
+                asset.originPosition,
+                gridPosition,
+                this.mapInfo.rootPath,
+                texturePath,
+                asset.textureFrame,
+                orderNumber,
+                animated
+            );
+        }
+
+        private map.Position.Grid GetTextureGridPosition(map.Element.Texture asset)
+        {
+            map.Position originPosition = asset.originPosition.ToPosition();
+            map.Position.Grid gridPosition = originPosition.GetGrid();
+
+            if (asset.type == map.Element.TextureType.groundNode)
+            {
+                return gridPosition;
+            }
+
+            map.Position.Node elementNode = originPosition.GetNode();
+            if (elementNode.nodeTop == asset.nodeAssetPosition.nodeTop
+                && elementNode.nodeLeft == asset.nodeAssetPosition.nodeLeft)
+            {
+                return gridPosition;
+            }
+
+            int checkingValue;
+            map.Position.Node assetNode = asset.nodeAssetPosition.ToPosition();
+
+            if (gridPosition.gridTop < assetNode.nodeTop)
+            {
+                gridPosition.gridTop = assetNode.nodeTop;
+            }
+            else if (gridPosition.gridTop > (checkingValue = (assetNode.nodeTop + map.Static.nodeMapDimension)))
+            {
+                gridPosition.gridTop = checkingValue;
+            }
+
+            if (gridPosition.gridLeft < assetNode.nodeLeft)
+            {
+                gridPosition.gridLeft = assetNode.nodeLeft;
+            }
+            else if (gridPosition.gridLeft > (checkingValue = (assetNode.nodeLeft + map.Static.nodeMapDimension)))
+            {
+                gridPosition.gridLeft = checkingValue;
+            }
+
+            return gridPosition;
+        }
+
+        private void AddParsedObstacleData(map.Element nodeElementsParsed)
+        {
+            List<map.Obstacle.Data> obstacleDataVector = new List<map.Obstacle.Data>();
+            List<map.Textures.Command.Element> obstacleGridCommands = new List<Textures.Command.Element>();
+
+            foreach (map.Element.Obstacle obstacleIndex in nodeElementsParsed.obstacle)
+            {
+                map.Obstacle.Data newObstacleData = new map.Obstacle.Data(obstacleIndex);
+                obstacleDataVector.Add(newObstacleData);
+
+                if (this.textureConfig.drawObstacleGrid == 1)
+                {
+                    map.Obstacle.Grid newObstacleGrid = new map.Obstacle.Grid(newObstacleData);
+                    map.Position.Sequential.Node nodeAssetPosition = newObstacleGrid.GetNodePosition();
+                    UnityEngine.Vector2 scenePosition = new UnityEngine.Vector3(
+                        (((float)map.Static.nodeMapDimension / 2) + nodeAssetPosition.nodeLeft) / 100,
+                        (((float)map.Static.nodeMapDimension / 2) + nodeAssetPosition.nodeTop) / -100
+                    );
+
+                    newObstacleGrid.Initialize();
+                    newObstacleGrid.DrawGrid();
+
+                    obstacleGridCommands.Add(new Textures.Command.AddObstacleGrid(
+                        obstacleGrid: newObstacleGrid,
+                        scenePosition: scenePosition
+                    ));
+                }
+            }
+
+            this.obstacleBarrier.AddDataVector(obstacleDataVector);
+
+            if (this.textureConfig.drawObstacleGrid == 1)
+            {
+                this.textureThread.PushVector(obstacleGridCommands);
+            }
+        }
+
         private void MainThread_Reset(Preparing.Command.Reset _command)
         {
             this.textureThread.Reset(_command.clearMapTextures, _command.clearSpecialNpc, _command.clearNormalNpc);
@@ -776,6 +957,7 @@ namespace game.resource.map
 
             this.currentGridPosition = new map.Position.Grid();
             this.currentOriginPosition = new map.Position();
+            this.fullMapLoaded = false;
 
             this.cacheGridTextures.Clear();
             this.cacheStaticNpc.Clear();
@@ -968,6 +1150,446 @@ namespace game.resource.map
         private void MainThread_FPS(Preparing.Command.FPS _command)
         {
             this.textureThread.PushCommand(new Textures.Command.FPS(_command.fps));
+        }
+    }
+
+    static class BuildinAnimation
+    {
+        private const int RegionElementCount = 6;
+        private const int BuildinObjSectionIndex = 5;
+        private const int BuildinObjHeaderSize = 16;
+        private const int BuildinObjSize = 228;
+        private const int MaxResourceFileNameLength = 128;
+        private const int RegionWidth = 512;
+        private const int RegionHeight = 1024;
+        private const int PositionToleranceSquared = 64 * 64;
+
+        private static readonly object SyncRoot = new object();
+        private static readonly Dictionary<string, RegionData> RegionCache = new Dictionary<string, RegionData>();
+
+        public static bool IsCandidate(map.Element.Texture asset)
+        {
+            return asset.type == map.Element.TextureType.groundObject
+                || asset.type == map.Element.TextureType.buildingUnder
+                || asset.type == map.Element.TextureType.buildingAbove
+                || asset.type == map.Element.TextureType.tree;
+        }
+
+        public static bool TryGet(string mapRootPath, map.Position.Sequential.Origin originPosition, map.Position.Grid gridPosition, int textureType, string texturePath, ushort textureFrame)
+        {
+            if (textureType != map.Element.TextureType.groundObject
+                && textureType != map.Element.TextureType.buildingUnder
+                && textureType != map.Element.TextureType.buildingAbove
+                && textureType != map.Element.TextureType.tree)
+            {
+                return false;
+            }
+
+            string normalizedTexturePath = NormalizeResourcePath(texturePath);
+            if (normalizedTexturePath == string.Empty)
+            {
+                return false;
+            }
+
+            foreach (string regionPath in BuildRegionPathCandidates(mapRootPath, originPosition, gridPosition))
+            {
+                RegionData regionData = GetRegionData(regionPath);
+                if (regionData.TryGetAnimatedObject(originPosition, textureFrame, normalizedTexturePath))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static RegionData GetRegionData(string regionPath)
+        {
+            lock (SyncRoot)
+            {
+                if (RegionCache.ContainsKey(regionPath))
+                {
+                    return RegionCache[regionPath];
+                }
+
+                RegionData regionData = LoadRegionData(regionPath);
+                RegionCache[regionPath] = regionData;
+                return regionData;
+            }
+        }
+
+        private static RegionData LoadRegionData(string regionPath)
+        {
+            resource.Buffer buffer = ReadResourceBuffer(regionPath);
+            if (buffer == null || buffer.data == null || buffer.size <= 0)
+            {
+                return RegionData.Empty;
+            }
+
+            try
+            {
+                return ParseRegionData(buffer.data, buffer.size);
+            }
+            catch (Exception exception)
+            {
+                UnityEngine.Debug.LogWarning("BuildinAnimation parse failed: " + regionPath + " error=" + exception.Message);
+                return RegionData.Empty;
+            }
+        }
+
+        private static resource.Buffer ReadResourceBuffer(string regionPath)
+        {
+            string localPath = System.IO.Path.Combine(
+                resource.dataController.Config.GetLocalStogareFullPath(),
+                regionPath.TrimStart('\\', '/').Replace('\\', System.IO.Path.DirectorySeparatorChar).Replace('/', System.IO.Path.DirectorySeparatorChar));
+
+            if (System.IO.File.Exists(localPath))
+            {
+                return System.IO.File.ReadAllBytes(localPath);
+            }
+
+            resource.Buffer nativeBuffer = ReadNativeResourceBuffer(regionPath);
+            if (nativeBuffer.size > 0)
+            {
+                return nativeBuffer;
+            }
+
+            if (resource.packageIni.ManagedPakReader.TryRead(regionPath, out resource.Buffer buffer)
+                && buffer.size > 0)
+            {
+                return buffer;
+            }
+
+            return new resource.Buffer();
+        }
+
+        private static resource.Buffer ReadNativeResourceBuffer(string regionPath)
+        {
+            if (resource.Cache.resourcePackageHandler == IntPtr.Zero)
+            {
+                return new resource.Buffer();
+            }
+
+            resource.packageIni.ElementReference elementReference = new resource.packageIni.ElementReference();
+            try
+            {
+                resource.packageIni.PluginApi.v(
+                    resource.Cache.resourcePackageHandler,
+                    regionPath,
+                    ref elementReference.id,
+                    ref elementReference.packageIndex,
+                    ref elementReference.index,
+                    ref elementReference.cacheIndex,
+                    ref elementReference.offset,
+                    ref elementReference.size
+                );
+            }
+            catch (Exception exception)
+            {
+                UnityEngine.Debug.LogWarning("BuildinAnimation native lookup failed: " + regionPath + " error=" + exception.Message);
+                return new resource.Buffer();
+            }
+
+            if (elementReference.id <= 0 || elementReference.size <= 0)
+            {
+                return new resource.Buffer();
+            }
+
+            resource.Buffer bufferResult = new resource.Buffer(elementReference.size);
+            IntPtr bufferPointer = System.Runtime.InteropServices.Marshal.AllocHGlobal(elementReference.size);
+
+            try
+            {
+                resource.packageIni.PluginApi.b(
+                    resource.Cache.resourcePackageHandler,
+                    elementReference.id,
+                    elementReference.packageIndex,
+                    elementReference.index,
+                    elementReference.cacheIndex,
+                    elementReference.offset,
+                    elementReference.size,
+                    bufferPointer
+                );
+
+                System.Runtime.InteropServices.Marshal.Copy(bufferPointer, bufferResult, 0, bufferResult.size);
+            }
+            catch (Exception exception)
+            {
+                UnityEngine.Debug.LogWarning("BuildinAnimation native read failed: " + regionPath + " error=" + exception.Message);
+                bufferResult = new resource.Buffer();
+            }
+            finally
+            {
+                System.Runtime.InteropServices.Marshal.FreeHGlobal(bufferPointer);
+            }
+
+            return bufferResult;
+        }
+
+        private static RegionData ParseRegionData(byte[] data, int size)
+        {
+            if (size < sizeof(uint) + (RegionElementCount * 8))
+            {
+                return RegionData.Empty;
+            }
+
+            uint sectionCount = ReadUInt32(data, 0);
+            if (sectionCount <= BuildinObjSectionIndex || sectionCount > 64)
+            {
+                return RegionData.Empty;
+            }
+
+            int sectionTableOffset = sizeof(uint);
+            int dataOffset = sizeof(uint) + ((int)sectionCount * 8);
+            int buildinSectionOffset = sectionTableOffset + (BuildinObjSectionIndex * 8);
+            uint buildinOffset = ReadUInt32(data, buildinSectionOffset);
+            uint buildinLength = ReadUInt32(data, buildinSectionOffset + 4);
+
+            if (buildinLength <= BuildinObjHeaderSize)
+            {
+                return RegionData.Empty;
+            }
+
+            int sectionStart = dataOffset + (int)buildinOffset;
+            int sectionEnd = sectionStart + (int)buildinLength;
+            if (sectionStart < 0 || sectionStart >= size || sectionEnd > size)
+            {
+                return RegionData.Empty;
+            }
+
+            uint objectCount = ReadUInt32(data, sectionStart);
+            if (objectCount == 0)
+            {
+                return RegionData.Empty;
+            }
+
+            long objectBytes = (long)objectCount * BuildinObjSize;
+            if (objectBytes > int.MaxValue || sectionStart + BuildinObjHeaderSize + objectBytes > sectionEnd)
+            {
+                return RegionData.Empty;
+            }
+
+            RegionData result = new RegionData();
+            int objectOffset = sectionStart + BuildinObjHeaderSize;
+            for (int index = 0; index < objectCount; index++, objectOffset += BuildinObjSize)
+            {
+                BuildinObject buildinObject = ParseBuildinObject(data, objectOffset);
+                if (buildinObject.Animated == false || buildinObject.TexturePath == string.Empty)
+                {
+                    continue;
+                }
+
+                result.Add(buildinObject);
+            }
+
+            return result;
+        }
+
+        private static BuildinObject ParseBuildinObject(byte[] data, int offset)
+        {
+            string texturePath = ReadFixedString(data, offset + 56, MaxResourceFileNameLength);
+            ushort frame = ReadUInt16(data, offset + 188);
+            ushort frameCount = ReadUInt16(data, offset + 190);
+            ushort animationSpeed = ReadUInt16(data, offset + 192);
+
+            return new BuildinObject
+            {
+                TexturePath = NormalizeResourcePath(texturePath),
+                Frame = frame,
+                FileFrameCount = frameCount,
+                Animated = animationSpeed > 0,
+                ImgTop = ReadInt32(data, offset + 8),
+                ImgLeft = ReadInt32(data, offset + 4),
+                RefTop = ReadInt32(data, offset + 200),
+                RefLeft = ReadInt32(data, offset + 196)
+            };
+        }
+
+        private static IEnumerable<string> BuildRegionPathCandidates(string mapRootPath, map.Position.Sequential.Origin originPosition, map.Position.Grid gridPosition)
+        {
+            string normalizedRootPath = NormalizeRootPath(mapRootPath);
+            if (normalizedRootPath == string.Empty)
+            {
+                yield break;
+            }
+
+            HashSet<string> yielded = new HashSet<string>();
+            int[] leftCandidates =
+            {
+                gridPosition.gridLeft / RegionWidth,
+                (gridPosition.gridLeft / RegionWidth) - 1,
+                (gridPosition.gridLeft / RegionWidth) + 1,
+                originPosition.left / RegionWidth
+            };
+
+            int[] topCandidates =
+            {
+                gridPosition.gridTop / RegionHeight,
+                (gridPosition.gridTop / RegionHeight) - 1,
+                (gridPosition.gridTop / RegionHeight) + 1,
+                gridPosition.gridTop / RegionWidth,
+                originPosition.top / RegionHeight,
+                originPosition.top / RegionWidth
+            };
+
+            foreach (int top in topCandidates)
+            {
+                foreach (int left in leftCandidates)
+                {
+                    if (top < 0 || left < 0)
+                    {
+                        continue;
+                    }
+
+                    string regionPath = normalizedRootPath + "\\v_" + top.ToString("D3") + "\\" + left.ToString("D3") + mapping.settings.MapList.Region.clientSuffix;
+                    string key = regionPath.ToLowerInvariant();
+                    if (yielded.Add(key))
+                    {
+                        yield return regionPath;
+                    }
+                }
+            }
+        }
+
+        private static string NormalizeRootPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return string.Empty;
+            }
+
+            string normalizedPath = path.Trim().Replace('/', '\\');
+            while (normalizedPath.EndsWith("\\"))
+            {
+                normalizedPath = normalizedPath.Substring(0, normalizedPath.Length - 1);
+            }
+
+            if (normalizedPath.StartsWith("\\") == false)
+            {
+                normalizedPath = "\\" + normalizedPath;
+            }
+
+            return normalizedPath;
+        }
+
+        private static string NormalizeResourcePath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return string.Empty;
+            }
+
+            string normalizedPath = path.Trim().Replace('/', '\\').ToLowerInvariant();
+            while (normalizedPath.StartsWith("\\") == false)
+            {
+                normalizedPath = "\\" + normalizedPath;
+            }
+
+            return normalizedPath;
+        }
+
+        private static string ReadFixedString(byte[] data, int offset, int maxLength)
+        {
+            int length = 0;
+            while (length < maxLength && data[offset + length] != 0)
+            {
+                length++;
+            }
+
+            if (length <= 0)
+            {
+                return string.Empty;
+            }
+
+            return Encoding.GetEncoding(1252).GetString(data, offset, length);
+        }
+
+        private static ushort ReadUInt16(byte[] data, int offset)
+        {
+            return BitConverter.ToUInt16(data, offset);
+        }
+
+        private static uint ReadUInt32(byte[] data, int offset)
+        {
+            return BitConverter.ToUInt32(data, offset);
+        }
+
+        private static int ReadInt32(byte[] data, int offset)
+        {
+            return BitConverter.ToInt32(data, offset);
+        }
+
+        private sealed class RegionData
+        {
+            public static readonly RegionData Empty = new RegionData();
+            private readonly Dictionary<string, List<BuildinObject>> objectsByTexturePath = new Dictionary<string, List<BuildinObject>>();
+
+            public void Add(BuildinObject buildinObject)
+            {
+                if (this.objectsByTexturePath.ContainsKey(buildinObject.TexturePath) == false)
+                {
+                    this.objectsByTexturePath[buildinObject.TexturePath] = new List<BuildinObject>();
+                }
+
+                this.objectsByTexturePath[buildinObject.TexturePath].Add(buildinObject);
+            }
+
+            public bool TryGetAnimatedObject(map.Position.Sequential.Origin originPosition, ushort textureFrame, string texturePath)
+            {
+                if (this.objectsByTexturePath.TryGetValue(texturePath, out List<BuildinObject> objects) == false)
+                {
+                    return false;
+                }
+
+                if (objects.Count > 0)
+                {
+                    return true;
+                }
+
+                int bestScore = int.MaxValue;
+                foreach (BuildinObject item in objects)
+                {
+                    int score = item.GetPositionScore(originPosition);
+                    if (item.Frame != textureFrame)
+                    {
+                        score += PositionToleranceSquared;
+                    }
+
+                    if (score < bestScore)
+                    {
+                        bestScore = score;
+                    }
+                }
+
+                return bestScore <= PositionToleranceSquared;
+            }
+        }
+
+        private struct BuildinObject
+        {
+            public string TexturePath;
+            public ushort Frame;
+            public ushort FileFrameCount;
+            public bool Animated;
+            public int ImgTop;
+            public int ImgLeft;
+            public int RefTop;
+            public int RefLeft;
+
+            public int GetPositionScore(map.Position.Sequential.Origin originPosition)
+            {
+                int imgScore = SquaredDistance(originPosition.top, originPosition.left, this.ImgTop, this.ImgLeft);
+                int refScore = SquaredDistance(originPosition.top, originPosition.left, this.RefTop, this.RefLeft);
+                return Math.Min(imgScore, refScore);
+            }
+
+            private static int SquaredDistance(int topA, int leftA, int topB, int leftB)
+            {
+                long dTop = topA - topB;
+                long dLeft = leftA - leftB;
+                long score = (dTop * dTop) + (dLeft * dLeft);
+                return score >= int.MaxValue ? int.MaxValue : (int)score;
+            }
         }
     }
 }

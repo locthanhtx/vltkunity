@@ -60,19 +60,23 @@ namespace game.resource.map
                 public string gameObjectName;
                 public map.Position.Sequential.Origin originPosition;
                 public map.Position.Grid gridAssetPosition;
+                public string mapRootPath;
                 public string texturePath;
                 public ushort textureFrame;
                 public int order;
+                public bool animated;
 
-                public AddNewTexture(int elementType, string gameObjectName, map.Position.Sequential.Origin originPosition, map.Position.Grid gridAssetPosition, string texturePath, ushort textureFrame, int order) : base(Command.ID.addNewTexture)
+                public AddNewTexture(int elementType, string gameObjectName, map.Position.Sequential.Origin originPosition, map.Position.Grid gridAssetPosition, string mapRootPath, string texturePath, ushort textureFrame, int order, bool animated = false) : base(Command.ID.addNewTexture)
                 {
                     this.elementType = elementType;
                     this.gameObjectName = gameObjectName;
                     this.originPosition = originPosition;
                     this.gridAssetPosition = gridAssetPosition;
+                    this.mapRootPath = mapRootPath;
                     this.texturePath = texturePath;
                     this.textureFrame = textureFrame;
                     this.order = order;
+                    this.animated = animated;
                 }
             }
 
@@ -256,6 +260,7 @@ namespace game.resource.map
             public readonly Dictionary<string, Dictionary<ushort, Textures.SpriteFrameCache>> treeStorage;
             public readonly Dictionary<string, Dictionary<ushort, Textures.SpriteFrameCache>> buildingUnderStorage;
             public readonly Dictionary<string, Dictionary<ushort, Textures.SpriteFrameCache>> buildingAboveStorage;
+            public readonly Dictionary<string, Dictionary<ushort, Textures.SpriteFrameCache>> animationStorage;
 
             public SpriteStorageCache()
             {
@@ -270,7 +275,20 @@ namespace game.resource.map
                 this.treeStorage = new Dictionary<string, Dictionary<ushort, SpriteFrameCache>>();
                 this.buildingUnderStorage = new Dictionary<string, Dictionary<ushort, SpriteFrameCache>>();
                 this.buildingAboveStorage = new Dictionary<string, Dictionary<ushort, SpriteFrameCache>>();
+                this.animationStorage = new Dictionary<string, Dictionary<ushort, SpriteFrameCache>>();
             }
+        }
+
+        private class MapTextureAnimation
+        {
+            public UnityEngine.GameObject gameObject;
+            public UnityEngine.SpriteRenderer spriteRenderer;
+            public string texturePath;
+            public map.Position.Sequential.Origin originPosition;
+            public ushort currentFrame;
+            public ushort frameCount;
+            public int intervalMilliseconds;
+            public float elapsedMilliseconds;
         }
 
         ////////////////////////////////////////////////////////////////////////////////
@@ -290,6 +308,7 @@ namespace game.resource.map
         private readonly Dictionary<settings.npcres.Controller, bool> specialNpcs;
         private readonly Dictionary<settings.npcres.Controller, bool> normalNpcs;
         private readonly Dictionary<settings.skill.Missile, bool> missiles;
+        private readonly List<MapTextureAnimation> mapTextureAnimations;
         private int progressingMillisecondsInCycle;
 
         private readonly Dictionary<settings.objres.Controller, bool> objs;
@@ -305,6 +324,7 @@ namespace game.resource.map
             this.specialNpcs = new Dictionary<settings.npcres.Controller, bool>();
             this.normalNpcs = new Dictionary<settings.npcres.Controller, bool>();
             this.missiles = new Dictionary<settings.skill.Missile, bool>();
+            this.mapTextureAnimations = new List<MapTextureAnimation>();
             this.progressingMillisecondsInCycle = (int)((1.0f / 60) * 1000);
 
             this.objs = new Dictionary<settings.objres.Controller, bool>();
@@ -373,11 +393,60 @@ namespace game.resource.map
 
         public void Update()
         {
+            this.Update_MapTextureAnimations();
             this.Update_Objs();
             this.Update_Missiles();
             this.Update_SpecialNpc();
             this.Update_NormalNpc();
             this.Update_MapCommands();
+        }
+
+        private void Update_MapTextureAnimations()
+        {
+            if (this.mapTextureAnimations.Count <= 0)
+            {
+                return;
+            }
+
+            float deltaMilliseconds = UnityEngine.Time.deltaTime * 1000.0f;
+            for (int index = this.mapTextureAnimations.Count - 1; index >= 0; index--)
+            {
+                MapTextureAnimation animation = this.mapTextureAnimations[index];
+                if (animation == null
+                    || animation.gameObject == null
+                    || animation.spriteRenderer == null
+                    || animation.frameCount <= 1
+                    || animation.intervalMilliseconds <= 0)
+                {
+                    this.mapTextureAnimations.RemoveAt(index);
+                    continue;
+                }
+
+                animation.elapsedMilliseconds += deltaMilliseconds;
+                if (animation.elapsedMilliseconds < animation.intervalMilliseconds)
+                {
+                    continue;
+                }
+
+                while (animation.elapsedMilliseconds >= animation.intervalMilliseconds)
+                {
+                    animation.elapsedMilliseconds -= animation.intervalMilliseconds;
+                    animation.currentFrame++;
+                    if (animation.currentFrame >= animation.frameCount)
+                    {
+                        animation.currentFrame = 0;
+                    }
+                }
+
+                Textures.SpriteFrameCache spriteFrame = this.GetAnimationSpriteFrame(animation.texturePath, animation.currentFrame);
+                if (spriteFrame == null || spriteFrame.frameSprite == null)
+                {
+                    continue;
+                }
+
+                animation.spriteRenderer.sprite = spriteFrame.frameSprite;
+                this.SetMapTexturePosition(animation.gameObject.transform, spriteFrame.frameInfo, animation.originPosition);
+            }
         }
         private void Update_Objs()
         {
@@ -710,6 +779,41 @@ namespace game.resource.map
             return spriteFrame;
         }
 
+        private Textures.SpriteFrameCache GetAnimationSpriteFrame(string texturePath, ushort textureFrame)
+        {
+            Dictionary<string, Dictionary<ushort, SpriteFrameCache>> spriteStorage = this.spriteStorageCache.animationStorage;
+            if (spriteStorage.ContainsKey(texturePath)
+                && spriteStorage[texturePath].ContainsKey(textureFrame))
+            {
+                return spriteStorage[texturePath][textureFrame];
+            }
+
+            Textures.SpriteFrameCache spriteFrame = new Textures.SpriteFrameCache();
+            spriteFrame.frameInfo = Game.Resource(texturePath).Get<game.resource.SPR.FrameInfo>(textureFrame);
+            spriteFrame.frameSprite = Game.Resource(texturePath).Get<UnityEngine.Sprite>(spriteFrame.frameInfo);
+
+            if (spriteFrame.frameInfo == null || spriteFrame.frameSprite == null)
+            {
+                return null;
+            }
+
+            if (spriteStorage.ContainsKey(texturePath) == false)
+            {
+                spriteStorage[texturePath] = new Dictionary<ushort, SpriteFrameCache>();
+            }
+
+            spriteStorage[texturePath][textureFrame] = spriteFrame;
+            return spriteFrame;
+        }
+
+        private void SetMapTexturePosition(UnityEngine.Transform transform, resource.SPR.FrameInfo frameInfo, map.Position.Sequential.Origin originPosition)
+        {
+            transform.position = new UnityEngine.Vector3(
+                (((float)frameInfo.width / 2) + originPosition.left) / 100,
+                (((float)frameInfo.height / 2) + originPosition.top) / -100
+            );
+        }
+
         private void Command_AddNewTexture(Textures.Command.AddNewTexture _newTexture)
         {
             UnityEngine.GameObject newGameObject = new UnityEngine.GameObject(_newTexture.gameObjectName);
@@ -719,10 +823,7 @@ namespace game.resource.map
             newSpriteRenderer.sprite = spriteFrame.frameSprite;
             newSpriteRenderer.sortingOrder = _newTexture.order;
 
-            newGameObject.transform.position = new UnityEngine.Vector3(
-                (((float)spriteFrame.frameInfo.width / 2) + _newTexture.originPosition.left) / 100,
-                (((float)spriteFrame.frameInfo.height / 2) + _newTexture.originPosition.top) / -100
-            );
+            this.SetMapTexturePosition(newGameObject.transform, spriteFrame.frameInfo, _newTexture.originPosition);
 
             switch (_newTexture.elementType)
             {
@@ -760,9 +861,74 @@ namespace game.resource.map
             }
 
             this.ownedByGrid[gridPosition.gridTop][gridPosition.gridLeft].Add(newGameObject);
+
+            this.Command_AddNewTexture_Animation(_newTexture, newGameObject, newSpriteRenderer);
+        }
+
+        private void Command_AddNewTexture_Animation(Textures.Command.AddNewTexture _newTexture, UnityEngine.GameObject gameObject, UnityEngine.SpriteRenderer spriteRenderer)
+        {
+            if (_newTexture.animated == false)
+            {
+                return;
+            }
+
+            try
+            {
+                if (BuildinAnimation.TryGet(_newTexture.mapRootPath, _newTexture.originPosition, _newTexture.gridAssetPosition, _newTexture.elementType, _newTexture.texturePath, _newTexture.textureFrame) == false)
+                {
+                    return;
+                }
+            }
+            catch (Exception exception)
+            {
+                UnityEngine.Debug.LogWarning("Map texture animation metadata failed: " + _newTexture.texturePath + " error=" + exception.Message);
+                return;
+            }
+
+            resource.SPR.Info sprInfo;
+            try
+            {
+                sprInfo = Game.Resource(_newTexture.texturePath).Get<resource.SPR.Info>();
+            }
+            catch (Exception exception)
+            {
+                UnityEngine.Debug.LogWarning("Map texture SPR info failed: " + _newTexture.texturePath + " error=" + exception.Message);
+                return;
+            }
+
+            if (sprInfo == null || sprInfo.frameCount <= 1)
+            {
+                return;
+            }
+
+            int intervalMilliseconds = sprInfo.interval;
+            if (intervalMilliseconds < 20)
+            {
+                intervalMilliseconds = 20;
+            }
+
+            ushort initialFrame = _newTexture.textureFrame;
+            if (initialFrame >= sprInfo.frameCount)
+            {
+                initialFrame = 0;
+            }
+
+            this.mapTextureAnimations.Add(new MapTextureAnimation
+            {
+                gameObject = gameObject,
+                spriteRenderer = spriteRenderer,
+                texturePath = _newTexture.texturePath,
+                originPosition = _newTexture.originPosition,
+                currentFrame = initialFrame,
+                frameCount = sprInfo.frameCount,
+                intervalMilliseconds = intervalMilliseconds,
+                elapsedMilliseconds = 0.0f
+            });
         }
         private void Command_RemoveGridDestroyGameObjects(List<UnityEngine.GameObject> _gameObjects)
         {
+            this.mapTextureAnimations.RemoveAll(animation => animation == null || animation.gameObject == null || _gameObjects.Contains(animation.gameObject));
+
             foreach (UnityEngine.GameObject gameObject in _gameObjects)
             {
                 UnityEngine.GameObject.Destroy(gameObject);
@@ -832,6 +998,9 @@ namespace game.resource.map
                 this.spriteStorageCache.buildingUnderStorage.Clear();
                 this.Command_Reset_DestroyCacheStorage(this.spriteStorageCache.buildingAboveStorage);
                 this.spriteStorageCache.buildingAboveStorage.Clear();
+                this.Command_Reset_DestroyCacheStorage(this.spriteStorageCache.animationStorage);
+                this.spriteStorageCache.animationStorage.Clear();
+                this.mapTextureAnimations.Clear();
             }
 
             if (_command.clearSpecialNpc)

@@ -24,6 +24,7 @@ namespace game.network.jx
         private const byte C2SDbPlayerSelect = 108;
         private const byte C2SPing = 122;
         private const byte C2SCpLock = 124;
+        private const byte C2SPlayerAutoEquip = 177;
         private const byte S2CNotifyPlayerLogin = 52;
         private const byte S2CLogin = 65;
         private const byte S2CRoleListResult = 55;
@@ -39,12 +40,25 @@ namespace game.network.jx
         private const byte S2CNpcWalk = 85;
         private const byte S2CNpcRun = 86;
         private const byte S2CNpcDeath = 92;
+        private const byte S2CPlayerExp = 98;
+        private const byte S2CPlayerSyncLeadExp = 113;
+        private const byte S2CPlayerLevelUp = 114;
         private const byte S2CPing = 143;
         private const byte S2CNpcStand = 145;
         private const byte S2CRequestNpcFail = 155;
+        private const byte S2CItemAutoMove = 158;
         private const byte S2CReplyClientPing = 174;
+        private const byte S2CPAutoMoveCallback = 201;
         private const byte S2CSyncPlayerMap = 203;
         private const byte S2CNpcSetPos = 206;
+        private const byte S2CPlayerSyncAttribute = 116;
+        private const byte S2CPlayerSkillLevel = 117;
+        private const byte S2CSyncItem = 118;
+        private const byte S2CRemoveItem = 119;
+        private const byte S2CSyncMoney = 120;
+        private const byte S2CSyncXu = 121;
+        private const byte S2CPlayerMoveItem = 122;
+        private const byte S2CSkillPropPointSync = 221;
         private const int CipherFrameSize = 34;
         private const int AccountBeginSize = 32;
 
@@ -64,7 +78,33 @@ namespace game.network.jx
         private const int NpcRequestCommandSize = 1 + sizeof(uint) + NameLength;
         private const uint ClassicMobileKey = 54354353;
         private static readonly Encoding StrictUtf8Encoding = new UTF8Encoding(false, true);
-        private static readonly Encoding ClassicTextEncoding = Encoding.GetEncoding(936);
+        private static readonly Encoding GbkEncoding = Encoding.GetEncoding(936);
+        private static readonly ushort[] Tcvn2Uni1 =
+        {
+            0x0000, 0x00da, 0x1ee4, 0x0003, 0x1eea, 0x1eec, 0x1eee, 0x0007,
+            0x0008, 0x0009, 0x000a, 0x000b, 0x000c, 0x000d, 0x000e, 0x000f,
+            0x0010, 0x1ee8, 0x1ef0, 0x1ef2, 0x1ef6, 0x1ef8, 0x00dd, 0x1ef4
+        };
+
+        private static readonly ushort[] Tcvn2Uni2 =
+        {
+            0x00c0, 0x1ea2, 0x00c3, 0x00c1, 0x1ea0, 0x1eb6, 0x1eac, 0x00c8,
+            0x1eba, 0x1ebc, 0x00c9, 0x1eb8, 0x1ec6, 0x00cc, 0x1ec8, 0x0128,
+            0x00cd, 0x1eca, 0x00d2, 0x1ece, 0x00d5, 0x00d3, 0x1ecc, 0x1ed8,
+            0x1edc, 0x1ede, 0x1ee0, 0x1eda, 0x1ee2, 0x00d9, 0x1ee6, 0x0168,
+            0x00a0, 0x0102, 0x00c2, 0x00ca, 0x00d4, 0x01a0, 0x01af, 0x0110,
+            0x0103, 0x00e2, 0x00ea, 0x00f4, 0x01a1, 0x01b0, 0x0111, 0x1eb0,
+            0x0300, 0x0309, 0x0303, 0x0301, 0x0323, 0x00e0, 0x1ea3, 0x00e3,
+            0x00e1, 0x1ea1, 0x1eb2, 0x1eb1, 0x1eb3, 0x1eb5, 0x1eaf, 0x1eb4,
+            0x1eae, 0x1ea6, 0x1ea8, 0x1eaa, 0x1ea4, 0x1ec0, 0x1eb7, 0x1ea7,
+            0x1ea9, 0x1eab, 0x1ea5, 0x1ead, 0x00e8, 0x1ec2, 0x1ebb, 0x1ebd,
+            0x00e9, 0x1eb9, 0x1ec1, 0x1ec3, 0x1ec5, 0x1ebf, 0x1ec7, 0x00ec,
+            0x1ec9, 0x1ec4, 0x1ebe, 0x1ed2, 0x0129, 0x00ed, 0x1ecb, 0x00f2,
+            0x1ed4, 0x1ecf, 0x00f5, 0x00f3, 0x1ecd, 0x1ed3, 0x1ed5, 0x1ed7,
+            0x1ed1, 0x1ed9, 0x1edd, 0x1edf, 0x1ee1, 0x1edb, 0x1ee3, 0x00f9,
+            0x1ed6, 0x1ee7, 0x0169, 0x00fa, 0x1ee5, 0x1eeb, 0x1eed, 0x1eef,
+            0x1ee9, 0x1ef1, 0x1ef3, 0x1ef7, 0x1ef9, 0x00fd, 0x1ef5, 0x1ed0
+        };
 
         private TcpClient tcpClient;
         private NetworkStream stream;
@@ -79,6 +119,7 @@ namespace game.network.jx
         private readonly Dictionary<int, byte> fullNpcKinds = new();
         private readonly HashSet<int> knownPlayerIds = new();
         private readonly Dictionary<int, int> requestedNpcTicks = new();
+        private readonly Dictionary<int, int> knownPlayerMoveLogTicks = new();
         private readonly HashSet<byte> loggedUnhandledWorldProtocols = new();
         private const int NpcRequestRetryMs = 450;
         private const int MaxNpcRequestRetriesPerPacket = 8;
@@ -345,6 +386,82 @@ namespace game.network.jx
             await SendPacketAsync(BuildNpcRunPacket(mapX, mapY, mapId));
         }
 
+        public async Task SendAutoEquipAsync(uint itemId, int kind, int place, int x, int y)
+        {
+            if (!IsConnected)
+            {
+                return;
+            }
+
+            await SendPacketAsync(BuildAutoEquipPacket(itemId, kind, place, x, y));
+        }
+
+        public static string TranslateDisplayString(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return string.Empty;
+            }
+
+            string original = ApplyVietnameseVisualFix(value);
+            if (HasVietnameseUnicode(original) &&
+                !ContainsCp1252Mojibake(original) &&
+                !LooksLikeGbkMojibake(original) &&
+                CountCjkChars(original) == 0)
+            {
+                return original;
+            }
+
+            try
+            {
+                byte[] bytes = Encoding.GetEncoding(1252).GetBytes(value);
+                bool hasLegacyByte = false;
+                for (int index = 0; index < bytes.Length; index++)
+                {
+                    if (bytes[index] >= 0x80)
+                    {
+                        hasLegacyByte = true;
+                        break;
+                    }
+                }
+
+                if (!hasLegacyByte)
+                {
+                    return original;
+                }
+
+                string utf8Decoded = TryDecodeStrictUtf8(bytes, 0, bytes.Length);
+                if (ShouldPreferDecodedDisplayString(original, utf8Decoded))
+                {
+                    return utf8Decoded;
+                }
+
+                string gbkDecoded = SanitizeProtocolString(GbkEncoding.GetString(bytes, 0, bytes.Length));
+                if (ShouldPreferGbkDisplayString(original, gbkDecoded))
+                {
+                    return gbkDecoded;
+                }
+
+                string best = original;
+                string tcvn3Decoded = DecodeTcvn3String(bytes, 0, bytes.Length);
+                if (ShouldPreferDecodedDisplayString(best, tcvn3Decoded))
+                {
+                    best = tcvn3Decoded;
+                }
+
+                if (ShouldPreferDecodedDisplayString(best, gbkDecoded))
+                {
+                    best = gbkDecoded;
+                }
+
+                return best;
+            }
+            catch
+            {
+                return original;
+            }
+        }
+
         private async Task<byte[]> ReadPacketAsync(int timeoutMs)
         {
             if (decodedPackets.Count > 0)
@@ -433,18 +550,44 @@ namespace game.network.jx
                     return 13;
                 case S2CNpcDeath:
                     return 69;
+                case S2CPlayerExp:
+                    return 9;
+                case S2CPlayerSyncLeadExp:
+                    return 5;
+                case S2CPlayerLevelUp:
+                    return 31;
                 case S2CPing:
                     return 5;
                 case S2CNpcStand:
                     return 25;
                 case S2CRequestNpcFail:
                     return 69;
+                case S2CItemAutoMove:
+                    return 37;
                 case S2CReplyClientPing:
                     return 9;
+                case S2CPAutoMoveCallback:
+                    return 33;
                 case S2CSyncPlayerMap:
                     return 9;
                 case S2CNpcSetPos:
                     return 25;
+                case S2CPlayerSyncAttribute:
+                    return 14;
+                case S2CPlayerSkillLevel:
+                    return 25;
+                case S2CSyncItem:
+                    return 904;
+                case S2CRemoveItem:
+                    return 21;
+                case S2CSyncMoney:
+                    return 13;
+                case S2CSyncXu:
+                    return 5;
+                case S2CPlayerMoveItem:
+                    return 37;
+                case S2CSkillPropPointSync:
+                    return 9;
                 case 80: // s2c_syncobjstate
                     return 6;
                 case 81: // s2c_syncobjdir
@@ -613,6 +756,20 @@ namespace game.network.jx
 
             int offset = 1;
             WriteInt32(packet, ref offset, 1);
+            return packet;
+        }
+
+        private static byte[] BuildAutoEquipPacket(uint itemId, int kind, int place, int x, int y)
+        {
+            byte[] packet = new byte[1 + sizeof(uint) + (sizeof(int) * 4)];
+            packet[0] = C2SPlayerAutoEquip;
+
+            int offset = 1;
+            WriteUInt32(packet, ref offset, itemId);
+            WriteInt32(packet, ref offset, kind);
+            WriteInt32(packet, ref offset, place);
+            WriteInt32(packet, ref offset, x);
+            WriteInt32(packet, ref offset, y);
             return packet;
         }
 
@@ -1014,6 +1171,8 @@ namespace game.network.jx
                                       " doing=" + normalNpcSync.Doing +
                                       " mapX=" + normalNpcSync.MapX +
                                       " mapY=" + normalNpcSync.MapY +
+                                      " hasDir=" + normalNpcSync.HasDirection +
+                                      " dir=" + normalNpcSync.Direction +
                                       " name=" + normalNpcSync.Name);
                         }
 
@@ -1049,6 +1208,7 @@ namespace game.network.jx
                 case S2CNpcRun:
                     if (TryParseNpcMoveSync(packet, packet[0] == S2CNpcRun, out ClassicNpcPositionSync moveSync))
                     {
+                        DebugKnownPlayerMoveSync(moveSync, packet[0]);
                         EnqueueWorldEvent(new ClassicWorldEvent
                         {
                             Type = ClassicWorldEventType.PlayerPositionSync,
@@ -1103,6 +1263,149 @@ namespace game.network.jx
                             Position = setPosSync
                         });
                         await RequestNpcFromPositionIfUnknownAsync(setPosSync, packet[0]);
+                    }
+                    break;
+
+                case S2CPlayerExp:
+                    if (TryParsePlayerExpSync(packet, out ClassicPlayerExpSync expSync))
+                    {
+                        EnqueueWorldEvent(new ClassicWorldEvent
+                        {
+                            Type = ClassicWorldEventType.PlayerExpSync,
+                            PlayerExp = expSync
+                        });
+                    }
+                    break;
+
+                case S2CPlayerSyncLeadExp:
+                    if (TryParseLeadExpSync(packet, out ClassicLeadExpSync leadExpSync))
+                    {
+                        EnqueueWorldEvent(new ClassicWorldEvent
+                        {
+                            Type = ClassicWorldEventType.LeadExpSync,
+                            LeadExp = leadExpSync
+                        });
+                    }
+                    break;
+
+                case S2CPlayerLevelUp:
+                    if (TryParsePlayerLevelUpSync(packet, out ClassicPlayerLevelUpSync levelUpSync))
+                    {
+                        EnqueueWorldEvent(new ClassicWorldEvent
+                        {
+                            Type = ClassicWorldEventType.PlayerLevelUpSync,
+                            LevelUp = levelUpSync
+                        });
+                    }
+                    break;
+
+                case S2CPlayerSyncAttribute:
+                    if (TryParsePlayerAttributeSync(packet, out ClassicAttributeSync attributeSync))
+                    {
+                        EnqueueWorldEvent(new ClassicWorldEvent
+                        {
+                            Type = ClassicWorldEventType.PlayerAttributeSync,
+                            Attribute = attributeSync
+                        });
+                    }
+                    break;
+
+                case S2CPlayerSkillLevel:
+                    if (TryParsePlayerSkillLevelSync(packet, out ClassicSkillLevelSync skillSync))
+                    {
+                        EnqueueWorldEvent(new ClassicWorldEvent
+                        {
+                            Type = ClassicWorldEventType.PlayerSkillLevelSync,
+                            Skill = skillSync
+                        });
+                    }
+                    break;
+
+                case S2CSyncItem:
+                    if (TryParseItemSync(packet, out ClassicItemSync itemSync))
+                    {
+                        EnqueueWorldEvent(new ClassicWorldEvent
+                        {
+                            Type = ClassicWorldEventType.ItemSync,
+                            Item = itemSync
+                        });
+                    }
+                    break;
+
+                case S2CRemoveItem:
+                    if (TryParseItemRemoveSync(packet, out ClassicItemRemoveSync itemRemoveSync))
+                    {
+                        EnqueueWorldEvent(new ClassicWorldEvent
+                        {
+                            Type = ClassicWorldEventType.ItemRemoveSync,
+                            ItemRemove = itemRemoveSync
+                        });
+                    }
+                    break;
+
+                case S2CSyncMoney:
+                    if (TryParseMoneySync(packet, out ClassicMoneySync moneySync))
+                    {
+                        EnqueueWorldEvent(new ClassicWorldEvent
+                        {
+                            Type = ClassicWorldEventType.MoneySync,
+                            Money = moneySync
+                        });
+                    }
+                    break;
+
+                case S2CSyncXu:
+                    if (TryParseXuSync(packet, out ClassicXuSync xuSync))
+                    {
+                        EnqueueWorldEvent(new ClassicWorldEvent
+                        {
+                            Type = ClassicWorldEventType.XuSync,
+                            Xu = xuSync
+                        });
+                    }
+                    break;
+
+                case S2CPlayerMoveItem:
+                    if (TryParseItemMoveSync(packet, out ClassicItemMoveSync itemMoveSync))
+                    {
+                        EnqueueWorldEvent(new ClassicWorldEvent
+                        {
+                            Type = ClassicWorldEventType.ItemMoveSync,
+                            ItemMove = itemMoveSync
+                        });
+                    }
+                    break;
+
+                case S2CItemAutoMove:
+                    if (TryParseItemAutoMoveSync(packet, out ClassicItemMoveSync itemAutoMoveSync))
+                    {
+                        EnqueueWorldEvent(new ClassicWorldEvent
+                        {
+                            Type = ClassicWorldEventType.ItemMoveSync,
+                            ItemMove = itemAutoMoveSync
+                        });
+                    }
+                    break;
+
+                case S2CPAutoMoveCallback:
+                    if (TryParseAutoEquipSync(packet, out ClassicAutoEquipSync autoEquipSync))
+                    {
+                        EnqueueWorldEvent(new ClassicWorldEvent
+                        {
+                            Type = ClassicWorldEventType.AutoEquipSync,
+                            AutoEquip = autoEquipSync
+                        });
+                    }
+                    break;
+
+                case S2CSkillPropPointSync:
+                    if (TryParseSkillPropPointSync(packet, out ClassicSkillPropPointSync skillPropPointSync))
+                    {
+                        EnqueueWorldEvent(new ClassicWorldEvent
+                        {
+                            Type = ClassicWorldEventType.SkillPropPointSync,
+                            SkillPropPoint = skillPropPointSync
+                        });
                     }
                     break;
 
@@ -1280,6 +1583,41 @@ namespace game.network.jx
                       " running=" + sync.IsRunning +
                       " standing=" + sync.IsStanding);
             await RequestNpcAsync(sync.Id);
+        }
+
+        private void DebugKnownPlayerMoveSync(ClassicNpcPositionSync sync, byte protocol)
+        {
+            if (sync == null || sync.Id <= 0 || sync.Id == currentPlayerId)
+            {
+                return;
+            }
+
+            bool isPlayerKnown = IsPlayerKnown(sync.Id);
+            bool isFullNpcKnown = IsFullNpcKnown(sync.Id);
+            bool hasKnownKind = TryGetFullNpcKind(sync.Id, out byte kind);
+
+            int now = Environment.TickCount;
+            lock (npcSyncLock)
+            {
+                if (knownPlayerMoveLogTicks.TryGetValue(sync.Id, out int lastTick) &&
+                    unchecked((uint)(now - lastTick)) < 350)
+                {
+                    return;
+                }
+
+                knownPlayerMoveLogTicks[sync.Id] = now;
+            }
+
+            Debug.Log("JxClassicClient << player move id=" + sync.Id +
+                      " protocol=" + JxClassicProtocol.GetS2CName(protocol) + "(" + protocol + ")" +
+                      " mapX=" + sync.MapX +
+                      " mapY=" + sync.MapY +
+                      " running=" + sync.IsRunning +
+                      " standing=" + sync.IsStanding +
+                      " knownPlayer=" + isPlayerKnown +
+                      " fullNpc=" + isFullNpcKnown +
+                      " kindKnown=" + hasKnownKind +
+                      " kind=" + (hasKnownKind ? kind.ToString() : "?"));
         }
 
         private async Task RetryPendingNpcRequestsAsync()
@@ -1916,6 +2254,444 @@ namespace game.network.jx
             return id != 0;
         }
 
+        private static bool TryParsePlayerExpSync(byte[] packet, out ClassicPlayerExpSync sync)
+        {
+            sync = null;
+            if (packet == null || packet.Length < 9)
+            {
+                return false;
+            }
+
+            long exp = BitConverter.ToInt64(packet, 1);
+            sync = new ClassicPlayerExpSync
+            {
+                Exp = exp < 0 ? 0 : exp
+            };
+            return true;
+        }
+
+        private static bool TryParseLeadExpSync(byte[] packet, out ClassicLeadExpSync sync)
+        {
+            sync = null;
+            if (packet == null || packet.Length < 5)
+            {
+                return false;
+            }
+
+            sync = new ClassicLeadExpSync
+            {
+                LeadExp = BitConverter.ToUInt32(packet, 1)
+            };
+            return true;
+        }
+
+        private static bool TryParsePlayerLevelUpSync(byte[] packet, out ClassicPlayerLevelUpSync sync)
+        {
+            sync = null;
+            if (packet == null || packet.Length < 31)
+            {
+                return false;
+            }
+
+            long exp = BitConverter.ToInt64(packet, 3);
+            sync = new ClassicPlayerLevelUpSync
+            {
+                Level = BitConverter.ToUInt16(packet, 1),
+                Exp = exp < 0 ? 0 : exp,
+                AttributePoint = BitConverter.ToInt32(packet, 11),
+                SkillPoint = BitConverter.ToInt32(packet, 15),
+                BaseLifeMax = BitConverter.ToUInt32(packet, 19),
+                BaseStaminaMax = BitConverter.ToUInt32(packet, 23),
+                BaseManaMax = BitConverter.ToUInt32(packet, 27)
+            };
+            return true;
+        }
+
+        private static bool TryParsePlayerAttributeSync(byte[] packet, out ClassicAttributeSync sync)
+        {
+            sync = null;
+            if (packet == null || packet.Length < 14)
+            {
+                return false;
+            }
+
+            sync = new ClassicAttributeSync
+            {
+                Attribute = packet[1],
+                BasePoint = BitConverter.ToInt32(packet, 2),
+                CurrentPoint = BitConverter.ToInt32(packet, 6),
+                LeavePoint = BitConverter.ToInt32(packet, 10)
+            };
+            return true;
+        }
+
+        private static bool TryParsePlayerSkillLevelSync(byte[] packet, out ClassicSkillLevelSync sync)
+        {
+            sync = null;
+            if (packet == null || packet.Length < 25)
+            {
+                return false;
+            }
+
+            sync = new ClassicSkillLevelSync
+            {
+                SkillId = BitConverter.ToInt32(packet, 1),
+                SkillLevel = BitConverter.ToInt32(packet, 5),
+                SkillExp = BitConverter.ToInt32(packet, 9),
+                LeavePoint = BitConverter.ToInt32(packet, 13),
+                AddPoint = BitConverter.ToInt32(packet, 17),
+                Type = BitConverter.ToInt32(packet, 21)
+            };
+            return sync.SkillId > 0;
+        }
+
+        private static bool TryParseItemSync(byte[] packet, out ClassicItemSync sync)
+        {
+            sync = null;
+            if (packet == null || packet.Length < 904)
+            {
+                return false;
+            }
+
+            int offset = 1;
+            uint id = BitConverter.ToUInt32(packet, offset);
+            offset += sizeof(uint);
+
+            int genre = ReadInt32At(packet, ref offset);
+            int detail = ReadInt32At(packet, ref offset);
+            int particular = ReadInt32At(packet, ref offset);
+            int series = ReadInt32At(packet, ref offset);
+            int level = ReadInt32At(packet, ref offset);
+            int place = ReadInt32At(packet, ref offset);
+            int x = ReadInt32At(packet, ref offset);
+            int y = ReadInt32At(packet, ref offset);
+            int luck = ReadInt32At(packet, ref offset);
+
+            int[] magicLevels = new int[6];
+            for (int index = 0; index < magicLevels.Length; index++)
+            {
+                magicLevels[index] = ReadInt32At(packet, ref offset);
+            }
+
+            List<KMagicAttrib> magics = new List<KMagicAttrib>();
+            List<KMagicAttrib> magicSlots = new List<KMagicAttrib>(6);
+            for (int index = 0; index < 6; index++)
+            {
+                int type = ReadInt32At(packet, ref offset);
+                int valueA = ReadInt32At(packet, ref offset);
+                int valueB = ReadInt32At(packet, ref offset);
+                int valueC = ReadInt32At(packet, ref offset);
+
+                KMagicAttrib attrib = new KMagicAttrib
+                {
+                    nAttribType = ClampInt16(type),
+                    nValue = new[]
+                    {
+                        ClampInt16(valueA),
+                        ClampInt16(valueB),
+                        ClampInt16(valueC)
+                    }
+                };
+
+                magicSlots.Add(attrib);
+
+                if (type > 0)
+                {
+                    magics.Add(attrib);
+                }
+            }
+
+            int[] rongMagicLevels = new int[6];
+            for (int index = 0; index < rongMagicLevels.Length; index++)
+            {
+                rongMagicLevels[index] = ReadInt32At(packet, ref offset);
+            }
+
+            int[] jbLevels = new int[7];
+            for (int index = 0; index < jbLevels.Length; index++)
+            {
+                jbLevels[index] = ReadInt32At(packet, ref offset);
+            }
+
+            ushort version = BitConverter.ToUInt16(packet, offset);
+            offset += sizeof(ushort);
+
+            int durability = ReadInt32At(packet, ref offset);
+            uint randomSeed = BitConverter.ToUInt32(packet, offset);
+            offset += sizeof(uint);
+
+            int goldId = ReadInt32At(packet, ref offset);
+            int stackNum = ReadInt32At(packet, ref offset);
+            int enChance = ReadInt32At(packet, ref offset);
+            int point = ReadInt32At(packet, ref offset);
+            int year = ReadInt32At(packet, ref offset);
+            int month = ReadInt32At(packet, ref offset);
+            int day = ReadInt32At(packet, ref offset);
+            int hour = ReadInt32At(packet, ref offset);
+            int minute = ReadInt32At(packet, ref offset);
+            int rongPoint = ReadInt32At(packet, ref offset);
+            int isBang = ReadInt32At(packet, ref offset);
+            int isKuaiJie = ReadInt32At(packet, ref offset);
+            int isMagic = ReadInt32At(packet, ref offset);
+            int skillType = ReadInt32At(packet, ref offset);
+            int magicId = ReadInt32At(packet, ref offset);
+
+            string itemInfo = ReadNullTerminated(packet, offset, 516);
+            offset += 516;
+            string ownerName = ReadNullTerminated(packet, offset, NameLength);
+            offset += NameLength;
+
+            int isWhere = ReadInt32At(packet, ref offset);
+            int syncType = ReadInt32At(packet, ref offset);
+            int isCanUse = ReadInt32At(packet, ref offset);
+            byte isLogin = packet[offset];
+            offset += 1;
+            int isPlatima = ReadInt32At(packet, ref offset);
+            int useMap = ReadInt32At(packet, ref offset);
+            int res = ReadInt32At(packet, ref offset);
+            int useKind = ReadInt32At(packet, ref offset);
+            int lockState = ReadInt32At(packet, ref offset);
+            int lockTime = ReadInt32At(packet, ref offset);
+            int tradePrice = ReadInt32At(packet, ref offset);
+
+            ItemData item = new ItemData
+            {
+                id = id,
+                Equipclasscode = ClampByte(genre),
+                Detailtype = ClampUInt16(detail),
+                Particulartype = ClampByte(particular),
+                Level = ClampByte(level),
+                Series = ClampByte(series),
+                Local = ClampByte(place),
+                X = ClampByte(x),
+                Y = ClampByte(y),
+                Lucky = ClampByte(luck),
+                Param1 = ClampByte(magicLevels[0]),
+                Param2 = ClampByte(magicLevels[1]),
+                Param3 = ClampByte(magicLevels[2]),
+                Param4 = ClampByte(magicLevels[3]),
+                Param5 = ClampByte(magicLevels[4]),
+                Param6 = ClampByte(magicLevels[5]),
+                Paramr1 = ClampByte(rongMagicLevels[0]),
+                Paramr2 = ClampByte(rongMagicLevels[1]),
+                Paramr3 = ClampByte(rongMagicLevels[2]),
+                Paramr4 = ClampByte(rongMagicLevels[3]),
+                Paramr5 = ClampByte(rongMagicLevels[4]),
+                Paramr6 = ClampByte(rongMagicLevels[5]),
+                Paramj1 = ClampByte(jbLevels[0]),
+                Paramj2 = ClampByte(jbLevels[1]),
+                Paramj3 = ClampByte(jbLevels[2]),
+                Paramj4 = ClampByte(jbLevels[3]),
+                Paramj5 = ClampByte(jbLevels[4]),
+                Paramj6 = ClampByte(jbLevels[5]),
+                Paramj7 = ClampByte(jbLevels[6]),
+                Durability = ClampUInt16(durability),
+                RandSeed = randomSeed,
+                IdGold = goldId,
+                Stack = ClampByte(stackNum),
+                Enchance = ClampByte(enChance),
+                Point = ClampByte(point),
+                Year = ClampUInt16(year),
+                Month = ClampByte(month),
+                Day = ClampByte(day),
+                Hour = ClampByte(hour),
+                Min = ClampByte(minute),
+                RongPoint = ClampByte(rongPoint),
+                IsBang = isBang != 0,
+                IsKuaiJie = ClampByte(isKuaiJie),
+                IsMagic = isMagic != 0,
+                Paramb1 = ClampByte(skillType),
+                Paramb2 = ClampByte(magicId),
+                Paramb3 = ClampByte(useMap),
+                Paramb4 = ClampByte(useKind),
+                IsWhere = ClampInt16(isWhere),
+                IsPlasma = isPlatima != 0,
+                WonName = ownerName,
+                Magics = magics
+            };
+
+            sync = new ClassicItemSync
+            {
+                Item = item,
+                Version = version,
+                ItemInfo = itemInfo,
+                SyncType = syncType,
+                IsCanUse = isCanUse != 0,
+                IsLogin = isLogin != 0,
+                IsBangRaw = isBang,
+                IsWhere = isWhere,
+                MagicLevels = magicLevels,
+                MagicAttribs = magicSlots,
+                RongMagicLevels = rongMagicLevels,
+                JbLevels = jbLevels,
+                UseMap = useMap,
+                ItemRes = res,
+                UseKind = useKind,
+                LockState = lockState,
+                LockTime = lockTime,
+                TradePrice = tradePrice
+            };
+            return id != 0;
+        }
+
+        private static bool TryParseItemRemoveSync(byte[] packet, out ClassicItemRemoveSync sync)
+        {
+            sync = null;
+            if (packet == null || packet.Length < 21)
+            {
+                return false;
+            }
+
+            sync = new ClassicItemRemoveSync
+            {
+                Id = BitConverter.ToUInt32(packet, 1),
+                Model = BitConverter.ToInt32(packet, 5),
+                Place = BitConverter.ToInt32(packet, 9),
+                X = BitConverter.ToInt32(packet, 13),
+                Y = BitConverter.ToInt32(packet, 17)
+            };
+            return sync.Id != 0;
+        }
+
+        private static bool TryParseMoneySync(byte[] packet, out ClassicMoneySync sync)
+        {
+            sync = null;
+            if (packet == null || packet.Length < 13)
+            {
+                return false;
+            }
+
+            sync = new ClassicMoneySync
+            {
+                EquipMoney = BitConverter.ToInt32(packet, 1),
+                RepositoryMoney = BitConverter.ToInt32(packet, 5),
+                TradeMoney = BitConverter.ToInt32(packet, 9)
+            };
+            return true;
+        }
+
+        private static bool TryParseXuSync(byte[] packet, out ClassicXuSync sync)
+        {
+            sync = null;
+            if (packet == null || packet.Length < 5)
+            {
+                return false;
+            }
+
+            sync = new ClassicXuSync
+            {
+                Xu = BitConverter.ToInt32(packet, 1)
+            };
+            return true;
+        }
+
+        private static bool TryParseItemMoveSync(byte[] packet, out ClassicItemMoveSync sync)
+        {
+            sync = null;
+            if (packet == null || packet.Length < 37)
+            {
+                return false;
+            }
+
+            sync = new ClassicItemMoveSync
+            {
+                DownPlace = BitConverter.ToInt32(packet, 1),
+                DownX = BitConverter.ToInt32(packet, 5),
+                DownY = BitConverter.ToInt32(packet, 9),
+                UpPlace = BitConverter.ToInt32(packet, 13),
+                UpX = BitConverter.ToInt32(packet, 17),
+                UpY = BitConverter.ToInt32(packet, 21),
+                DownContainer = BitConverter.ToInt32(packet, 25),
+                UpContainer = BitConverter.ToInt32(packet, 29),
+                IsPanel = BitConverter.ToInt32(packet, 33) != 0
+            };
+            return true;
+        }
+
+        private static bool TryParseItemAutoMoveSync(byte[] packet, out ClassicItemMoveSync sync)
+        {
+            sync = null;
+            if (packet == null || packet.Length < 37)
+            {
+                return false;
+            }
+
+            sync = new ClassicItemMoveSync
+            {
+                ItemId = BitConverter.ToUInt32(packet, 1),
+                DownPlace = BitConverter.ToInt32(packet, 5),
+                DownX = BitConverter.ToInt32(packet, 9),
+                DownY = BitConverter.ToInt32(packet, 13),
+                UpPlace = BitConverter.ToInt32(packet, 17),
+                UpX = BitConverter.ToInt32(packet, 21),
+                UpY = BitConverter.ToInt32(packet, 25),
+                UpContainer = BitConverter.ToInt32(packet, 29),
+                DownContainer = BitConverter.ToInt32(packet, 33),
+                IsPanel = false
+            };
+            return true;
+        }
+
+        private static bool TryParseAutoEquipSync(byte[] packet, out ClassicAutoEquipSync sync)
+        {
+            sync = null;
+            if (packet == null || packet.Length < 33)
+            {
+                return false;
+            }
+
+            sync = new ClassicAutoEquipSync
+            {
+                ItemId = BitConverter.ToUInt32(packet, 1),
+                SourceX = BitConverter.ToInt32(packet, 5),
+                SourceY = BitConverter.ToInt32(packet, 9),
+                DestX = BitConverter.ToInt32(packet, 13),
+                DestY = BitConverter.ToInt32(packet, 17),
+                DestPlace = BitConverter.ToInt32(packet, 21),
+                SourcePlace = BitConverter.ToInt32(packet, 25),
+                Kind = BitConverter.ToInt32(packet, 29)
+            };
+            return sync.ItemId != 0;
+        }
+
+        private static bool TryParseSkillPropPointSync(byte[] packet, out ClassicSkillPropPointSync sync)
+        {
+            sync = null;
+            if (packet == null || packet.Length < 9)
+            {
+                return false;
+            }
+
+            sync = new ClassicSkillPropPointSync
+            {
+                SkillPoint = BitConverter.ToInt32(packet, 1),
+                AttributePoint = BitConverter.ToInt32(packet, 5)
+            };
+            return true;
+        }
+
+        private static int ReadInt32At(byte[] data, ref int offset)
+        {
+            int value = BitConverter.ToInt32(data, offset);
+            offset += sizeof(int);
+            return value;
+        }
+
+        private static byte ClampByte(int value)
+        {
+            return (byte)Math.Max(byte.MinValue, Math.Min(byte.MaxValue, value));
+        }
+
+        private static ushort ClampUInt16(int value)
+        {
+            return (ushort)Math.Max(ushort.MinValue, Math.Min(ushort.MaxValue, value));
+        }
+
+        private static short ClampInt16(int value)
+        {
+            return (short)Math.Max(short.MinValue, Math.Min(short.MaxValue, value));
+        }
+
         private static bool IsReasonableRoleName(string name)
         {
             if (string.IsNullOrWhiteSpace(name))
@@ -2108,18 +2884,349 @@ namespace game.network.jx
                 return string.Empty;
             }
 
-            string value = null;
-
             try
             {
-                value = StrictUtf8Encoding.GetString(data, offset, count);
+                return SanitizeProtocolString(StrictUtf8Encoding.GetString(data, offset, count));
             }
             catch (DecoderFallbackException)
             {
-                value = ClassicTextEncoding.GetString(data, offset, count);
+                return SanitizeProtocolString(DecodeTcvn3String(data, offset, count));
+            }
+        }
+
+        private static string TryDecodeStrictUtf8(byte[] data, int offset, int count)
+        {
+            if (count <= 0)
+            {
+                return string.Empty;
             }
 
-            return SanitizeProtocolString(value);
+            try
+            {
+                return SanitizeProtocolString(StrictUtf8Encoding.GetString(data, offset, count));
+            }
+            catch (DecoderFallbackException)
+            {
+                return string.Empty;
+            }
+        }
+
+        private static string DecodeTcvn3String(byte[] data, int offset, int count)
+        {
+            StringBuilder builder = new StringBuilder(count);
+
+            for (int index = 0; index < count; index++)
+            {
+                byte value = data[offset + index];
+                ushort codepoint;
+                if (value < Tcvn2Uni1.Length)
+                {
+                    codepoint = Tcvn2Uni1[value];
+                }
+                else if (value < 0x80)
+                {
+                    codepoint = value;
+                }
+                else
+                {
+                    codepoint = Tcvn2Uni2[value - 0x80];
+                }
+
+                if (codepoint != 0)
+                {
+                    builder.Append(char.ConvertFromUtf32(codepoint));
+                }
+            }
+
+            return ApplyVietnameseVisualFix(builder.ToString());
+        }
+
+        private static bool LooksLikeUnicodeVietnamese(string value)
+        {
+            foreach (char item in value)
+            {
+                if ((item >= '\u1ea0' && item <= '\u1ef9')
+                    || item == 'ă' || item == 'Ă'
+                    || item == 'â' || item == 'Â'
+                    || item == 'đ' || item == 'Đ'
+                    || item == 'ê' || item == 'Ê'
+                    || item == 'ô' || item == 'Ô'
+                    || item == 'ơ' || item == 'Ơ'
+                    || item == 'ư' || item == 'Ư'
+                    || item == 'à' || item == 'À'
+                    || item == 'á' || item == 'Á'
+                    || item == 'ã' || item == 'Ã'
+                    || item == 'è' || item == 'È'
+                    || item == 'é' || item == 'É'
+                    || item == 'ì' || item == 'Ì'
+                    || item == 'í' || item == 'Í'
+                    || item == 'ò' || item == 'Ò'
+                    || item == 'ó' || item == 'Ó'
+                    || item == 'õ' || item == 'Õ'
+                    || item == 'ù' || item == 'Ù'
+                    || item == 'ú' || item == 'Ú'
+                    || item == 'ý' || item == 'Ý')
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool ContainsCp1252Mojibake(string value)
+        {
+            foreach (char item in value)
+            {
+                if (IsCp1252MojibakeChar(item))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool ShouldPreferDecodedDisplayString(string original, string decoded)
+        {
+            if (string.IsNullOrWhiteSpace(decoded))
+            {
+                return false;
+            }
+
+            int originalMojibake = CountCp1252Mojibake(original);
+            int decodedMojibake = CountCp1252Mojibake(decoded);
+            int originalScore = ScoreDisplayString(original);
+            int decodedScore = ScoreDisplayString(decoded);
+
+            if (originalMojibake > 0 && decodedMojibake == 0 && decodedScore >= originalScore - 2)
+            {
+                return true;
+            }
+
+            return decodedScore >= originalScore + 4;
+        }
+
+        private static bool ShouldPreferGbkDisplayString(string original, string decoded)
+        {
+            if (string.IsNullOrWhiteSpace(decoded) || HasVietnameseUnicode(decoded) || LooksLikeTcvn3LatinText(original))
+            {
+                return false;
+            }
+
+            int cjkCount = CountCjkChars(decoded);
+            if (cjkCount < 2)
+            {
+                return false;
+            }
+
+            return LooksLikeGbkMojibake(original) || cjkCount * 2 >= decoded.Length;
+        }
+
+        private static bool LooksLikeTcvn3LatinText(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return false;
+            }
+
+            int asciiLetters = 0;
+            int legacyLetters = 0;
+            foreach (char item in value)
+            {
+                if ((item >= 'A' && item <= 'Z') || (item >= 'a' && item <= 'z'))
+                {
+                    asciiLetters++;
+                }
+                else if (item >= 0x80)
+                {
+                    legacyLetters++;
+                }
+            }
+
+            return legacyLetters > 0 && asciiLetters >= legacyLetters * 2;
+        }
+
+        private static bool LooksLikeGbkMojibake(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return false;
+            }
+
+            int hits = 0;
+            foreach (char item in value)
+            {
+                if ("Ãû³ÆµÀ¾ßÖÌÏê¸ð¶¯»ÎÄ¼þÓ¦Ë÷Òý¿íßØ".IndexOf(item) >= 0)
+                {
+                    hits++;
+                }
+            }
+
+            return hits >= 2;
+        }
+
+        private static int CountCp1252Mojibake(string value)
+        {
+            int count = 0;
+            foreach (char item in value)
+            {
+                if (IsCp1252MojibakeChar(item))
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        private static int CountCjkChars(string value)
+        {
+            int count = 0;
+            foreach (char item in value)
+            {
+                if (IsCjkChar(item))
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        private static bool HasVietnameseUnicode(string value)
+        {
+            foreach (char item in value)
+            {
+                if (IsVietnameseUnicodeChar(item))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static int ScoreDisplayString(string value)
+        {
+            int score = 0;
+            foreach (char item in value)
+            {
+                if (char.IsControl(item) || item == '\ufffd')
+                {
+                    score -= 20;
+                }
+                else if (IsCp1252MojibakeChar(item))
+                {
+                    score -= 6;
+                }
+                else if (IsVietnameseUnicodeChar(item))
+                {
+                    score += 4;
+                }
+                else if (IsCjkChar(item))
+                {
+                    score += 3;
+                }
+                else if (char.IsLetterOrDigit(item))
+                {
+                    score += 1;
+                }
+                else if (char.IsWhiteSpace(item))
+                {
+                    score += 1;
+                }
+                else if (item > 0x7f)
+                {
+                    score -= 2;
+                }
+            }
+
+            return score;
+        }
+
+        private static bool IsVietnameseUnicodeChar(char item)
+        {
+            return (item >= '\u1ea0' && item <= '\u1ef9')
+                   || item == 'ă' || item == 'Ă'
+                   || item == 'â' || item == 'Â'
+                   || item == 'đ' || item == 'Đ'
+                   || item == 'ê' || item == 'Ê'
+                   || item == 'ô' || item == 'Ô'
+                   || item == 'ơ' || item == 'Ơ'
+                   || item == 'ư' || item == 'Ư'
+                   || item == 'à' || item == 'À'
+                   || item == 'á' || item == 'Á'
+                   || item == 'ã' || item == 'Ã'
+                   || item == 'è' || item == 'È'
+                   || item == 'é' || item == 'É'
+                   || item == 'ì' || item == 'Ì'
+                   || item == 'í' || item == 'Í'
+                   || item == 'ò' || item == 'Ò'
+                   || item == 'ó' || item == 'Ó'
+                   || item == 'õ' || item == 'Õ'
+                   || item == 'ù' || item == 'Ù'
+                   || item == 'ú' || item == 'Ú'
+                   || item == 'ý' || item == 'Ý';
+        }
+
+        private static bool IsCjkChar(char item)
+        {
+            return (item >= '\u3400' && item <= '\u4dbf')
+                   || (item >= '\u4e00' && item <= '\u9fff')
+                   || (item >= '\uf900' && item <= '\ufaff');
+        }
+
+        private static bool IsCp1252MojibakeChar(char item)
+        {
+            return (item >= '\u2018' && item <= '\u2026')
+                   || item == '\u20ac'
+                   || item == '\u2030'
+                   || item == '\u0160'
+                   || item == '\u0152'
+                   || item == '\u017d'
+                   || item == '\u0161'
+                   || item == '\u0153'
+                   || item == '\u017e'
+                   || item == '\u0178'
+                   || item == '¡'
+                   || item == '§'
+                   || item == '¨'
+                   || item == 'ª'
+                   || item == '«'
+                   || item == '¬'
+                   || item == '®'
+                   || item == '¯'
+                   || item == '°'
+                   || item == '±'
+                   || item == '²'
+                   || item == '³'
+                   || item == 'µ'
+                   || item == '¶'
+                   || item == '·'
+                   || item == '¸'
+                   || item == 'º'
+                   || item == '»'
+                   || item == '¼'
+                   || item == '½'
+                   || item == '¾'
+                   || item == '¿'
+                   || "ÄÅÆÇÐÑØÞßåæçðñö÷øþ".IndexOf(item) >= 0;
+        }
+
+        private static string ApplyVietnameseVisualFix(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return string.Empty;
+            }
+
+            return value
+                .Replace("Ý", "í")
+                .Replace("Ê", "ấ")
+                .Replace("Ò", "ề")
+                .Replace("Õ", "ế")
+                .Replace("ñ", "ủ");
         }
 
         private static string SanitizeProtocolString(string value)
@@ -2130,15 +3237,23 @@ namespace game.network.jx
             }
 
             StringBuilder builder = new StringBuilder(value.Length);
+            bool lastWasNewline = false;
 
             foreach (char item in value)
             {
                 if (char.IsControl(item))
                 {
+                    if ((item == '\n' || item == '\r') && !lastWasNewline)
+                    {
+                        builder.Append('\n');
+                        lastWasNewline = true;
+                    }
+
                     continue;
                 }
 
                 builder.Append(item);
+                lastWasNewline = false;
             }
 
             return builder.ToString().Trim();
@@ -2220,6 +3335,7 @@ namespace game.network.jx
                 fullNpcKinds.Clear();
                 knownPlayerIds.Clear();
                 requestedNpcTicks.Clear();
+                knownPlayerMoveLogTicks.Clear();
                 loggedUnhandledWorldProtocols.Clear();
             }
 
@@ -2258,7 +3374,19 @@ namespace game.network.jx
         PlayerFullSync,
         PlayerNormalSync,
         PlayerPositionSync,
-        ActorCommandSync
+        ActorCommandSync,
+        PlayerAttributeSync,
+        PlayerSkillLevelSync,
+        ItemSync,
+        ItemRemoveSync,
+        MoneySync,
+        XuSync,
+        ItemMoveSync,
+        AutoEquipSync,
+        SkillPropPointSync,
+        PlayerExpSync,
+        LeadExpSync,
+        PlayerLevelUpSync
     }
 
     public sealed class ClassicWorldEvent
@@ -2270,6 +3398,132 @@ namespace game.network.jx
         public ClassicPlayerSync Player;
         public ClassicNpcPositionSync Position;
         public ClassicNpcCommandSync Command;
+        public ClassicAttributeSync Attribute;
+        public ClassicSkillLevelSync Skill;
+        public ClassicItemSync Item;
+        public ClassicItemRemoveSync ItemRemove;
+        public ClassicMoneySync Money;
+        public ClassicXuSync Xu;
+        public ClassicItemMoveSync ItemMove;
+        public ClassicAutoEquipSync AutoEquip;
+        public ClassicSkillPropPointSync SkillPropPoint;
+        public ClassicPlayerExpSync PlayerExp;
+        public ClassicLeadExpSync LeadExp;
+        public ClassicPlayerLevelUpSync LevelUp;
+    }
+
+    public sealed class ClassicPlayerExpSync
+    {
+        public long Exp;
+    }
+
+    public sealed class ClassicLeadExpSync
+    {
+        public uint LeadExp;
+    }
+
+    public sealed class ClassicPlayerLevelUpSync
+    {
+        public ushort Level;
+        public long Exp;
+        public int AttributePoint;
+        public int SkillPoint;
+        public uint BaseLifeMax;
+        public uint BaseStaminaMax;
+        public uint BaseManaMax;
+    }
+
+    public sealed class ClassicAttributeSync
+    {
+        public byte Attribute;
+        public int BasePoint;
+        public int CurrentPoint;
+        public int LeavePoint;
+    }
+
+    public sealed class ClassicSkillLevelSync
+    {
+        public int SkillId;
+        public int SkillLevel;
+        public int SkillExp;
+        public int LeavePoint;
+        public int AddPoint;
+        public int Type;
+    }
+
+    public sealed class ClassicItemSync
+    {
+        public ItemData Item;
+        public ushort Version;
+        public string ItemInfo;
+        public int SyncType;
+        public bool IsCanUse;
+        public bool IsLogin;
+        public int IsBangRaw;
+        public int IsWhere;
+        public int[] MagicLevels;
+        public List<KMagicAttrib> MagicAttribs;
+        public int[] RongMagicLevels;
+        public int[] JbLevels;
+        public int UseMap;
+        public int ItemRes;
+        public int UseKind;
+        public int LockState;
+        public int LockTime;
+        public int TradePrice;
+    }
+
+    public sealed class ClassicItemRemoveSync
+    {
+        public uint Id;
+        public int Model;
+        public int Place;
+        public int X;
+        public int Y;
+    }
+
+    public sealed class ClassicMoneySync
+    {
+        public int EquipMoney;
+        public int RepositoryMoney;
+        public int TradeMoney;
+    }
+
+    public sealed class ClassicXuSync
+    {
+        public int Xu;
+    }
+
+    public sealed class ClassicItemMoveSync
+    {
+        public uint ItemId;
+        public int DownPlace;
+        public int DownX;
+        public int DownY;
+        public int UpPlace;
+        public int UpX;
+        public int UpY;
+        public int DownContainer;
+        public int UpContainer;
+        public bool IsPanel;
+    }
+
+    public sealed class ClassicAutoEquipSync
+    {
+        public uint ItemId;
+        public int SourcePlace;
+        public int SourceX;
+        public int SourceY;
+        public int DestPlace;
+        public int DestX;
+        public int DestY;
+        public int Kind;
+    }
+
+    public sealed class ClassicSkillPropPointSync
+    {
+        public int SkillPoint;
+        public int AttributePoint;
     }
 
     public sealed class ClassicCurrentPlayerSync

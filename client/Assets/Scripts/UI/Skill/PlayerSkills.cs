@@ -29,13 +29,34 @@ public class PlayerSkills : MonoBehaviour
 
     void Start()
     {
-        playerSkills = PlayerMain.instance.playerSkills();
-
         BtnSwitch.onClick.AddListener(() => Switch());
         BtnClose.onClick.AddListener(() => gameObject.SetActive(false));
 
+        RefreshSkills();
+    }
+
+    public void RefreshSkills()
+    {
+        playerSkills = PlayerMain.instance != null
+            ? PlayerMain.instance.playerSkills()
+            : new Dictionary<ushort, PlayerSkill>();
+
+        ResetSkillList();
         SetUpSkillActive();
         SetUpSkillList(playerSkills);
+    }
+
+    private void ResetSkillList()
+    {
+        if (Skills == null)
+        {
+            return;
+        }
+
+        foreach (Transform child in Skills.transform)
+        {
+            Destroy(child.gameObject);
+        }
     }
 
     public void AddSkillToActive(PlayerSkill skill, int location)

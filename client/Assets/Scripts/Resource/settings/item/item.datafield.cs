@@ -15,6 +15,10 @@ namespace game.resource.settings.item
         // lấy từ settings/item/magicscript.txt
         protected settings.item.MagicScriptBase magicScriptBase;
 
+        // dữ liệu nền tảng của vật phẩm không phải trang bị
+        // lấy từ potion/mine/questkey/fusion/townportal giống Axmol KBasPropTbl
+        protected settings.item.SimpleItemBase simpleItemBase;
+
         // thuộc tính ma pháp của vật phẩm
         // được tạo ra từ thông số chỉ định
         protected List<settings.skill.SkillSettingData.KMagicAttrib> magicAttrib;

@@ -3,33 +3,45 @@ namespace game.resource.mapping.settings
 {
     struct Item
     {
-        public const string directoryPath = "\\settings\\item\\004\\";
+        public const string directoryPath = "\\update10\\settings\\item\\004\\";
 
-        public const string amulet = directoryPath + "amulet.txt";
-        public const string armor = directoryPath + "armor.txt";
-        public const string belt = directoryPath + "belt.txt";
-        public const string boot = directoryPath + "boot.txt";
-        public const string cuff = directoryPath + "cuff.txt";
-        public const string helm = directoryPath + "helm.txt";
-        public const string horse = directoryPath + "horse.txt";
-        public const string meleeweapon = directoryPath + "meleeweapon.txt";
-        public const string pendant = directoryPath + "pendant.txt";
+        public const string amulet = directoryPath + "Amulet.txt";
+        public const string armor = directoryPath + "Armor.txt";
+        public const string belt = directoryPath + "Belt.txt";
+        public const string boot = directoryPath + "Boot.txt";
+        public const string cuff = directoryPath + "Cuff.txt";
+        public const string helm = directoryPath + "Helm.txt";
+        public const string horse = directoryPath + "Horse.txt";
+        public const string meleeweapon = directoryPath + "MeleeWeapon.txt";
+        public const string pendant = directoryPath + "Pendant.txt";
+        public const string pifeng = directoryPath + "Pifeng.txt";
         public const string rangeweapon = directoryPath + "rangeweapon.txt";
-        public const string ring = directoryPath + "ring.txt";
+        public const string ring = directoryPath + "Ring.txt";
+        public const string shipin = directoryPath + "Shipin.txt";
+        public const string yinjian = directoryPath + "Yinjian.txt";
 
-        public const string armorres = directoryPath + "armorres.txt";
-        public const string helmres = directoryPath + "helmres.txt";
-        public const string horseres = directoryPath + "horseres.txt";
-        public const string meleeres = directoryPath + "meleeres.txt";
-        public const string rangeres = directoryPath + "rangeres.txt";
+        public const string armorres = "\\settings\\item\\ArmorRes.txt";
+        public const string helmres = "\\settings\\item\\HelmRes.txt";
+        public const string horseres = "\\settings\\item\\HorseRes.txt";
+        public const string meleeres = "\\settings\\item\\MeleeRes.txt";
+        public const string rangeres = "\\settings\\item\\RangeRes.txt";
 
         public const string magicattrib = directoryPath + "magicattrib.txt";
 
-        public const string goldEquip = directoryPath + "goldequip.txt";
+        public const string mine = directoryPath + "mine.txt";
+        public const string questKey = directoryPath + "questkey.txt";
+        public const string fusion = directoryPath + "fusion.txt";
+        public const string potion = directoryPath + "potion.txt";
+        public const string medMaterialBase = directoryPath + "medmaterialbase.txt";
+        public const string townPortal = directoryPath + "TownPortal.txt";
+        public const string unique = directoryPath + "unique.txt";
+
+        public const string goldEquip = directoryPath + "GoldItem.txt";
+        public const string platinaEquip = directoryPath + "platinaequip.txt";
         public const string goldEquipRes = "\\settings\\item\\GolditemRes.txt";
-        public const string magicattrib_ge = directoryPath + "magicattrib_ge.txt";
+        public const string magicattrib_ge = directoryPath + "GoldMagic.txt";
         public const string magicScript = directoryPath + "magicscript.txt";
-        public const string mask = directoryPath + "mask.txt";
+        public const string mask = directoryPath + "Mask.txt";
 
         public struct HeaderIndexer
         {
@@ -107,6 +119,8 @@ namespace game.resource.mapping.settings
             public enum MagicAttrib
             {
                 name,
+                nextLevel,
+                loadModel,
                 pos,
                 series,
                 level,
@@ -129,6 +143,10 @@ namespace game.resource.mapping.settings
                 dropRate8BaoTay,
                 dropRate9DayChuyen,
                 dropRate10Ngua,
+                dropRate11MatNa,
+                dropRate12PhiPhong,
+                dropRate13AnGiam,
+                dropRate14TrangSuc,
             }
 
             public enum MagicAttribGoldEquip

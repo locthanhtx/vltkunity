@@ -145,6 +145,22 @@ namespace game.resource.settings.item
             this.series = s;
         }
 
+        private void GenerateSimpleItem(int g, int d, int p, int l, int s)
+        {
+            item.SimpleItemBase simpleItemBase = item.Getters.GetSimpleItemBase(g, d, p, l);
+
+            if (simpleItemBase == null)
+            {
+                return;
+            }
+
+            this.type = Defination.Type.normalItem;
+            this.simpleItemBase = simpleItemBase;
+            this.level = l > 0 ? l : simpleItemBase.level;
+            this.series = s >= 0 ? s : simpleItemBase.series;
+            this.stack = simpleItemBase.stack > 0 ? 1 : 0;
+        }
+
         /// <summary>
         /// tạo vật phẩm dựa vào file goldequip.txt
         /// </summary>
@@ -204,7 +220,15 @@ namespace game.resource.settings.item
                     break;
 
                 case 6:
-                    this.GenerateMagicScript(g, d, p, l, s);
+                    this.GenerateSimpleItem(g, d, p, l, s);
+                    break;
+
+                case 1:
+                case 2:
+                case 3:
+                case 4:
+                case 5:
+                    this.GenerateSimpleItem(g, d, p, l, s);
                     break;
             }
         }

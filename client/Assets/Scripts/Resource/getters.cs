@@ -53,8 +53,9 @@ namespace game
                     continue;
                 }
 
-                roots.Add(System.IO.Path.Combine(cocosRoot, "Full", "SwordOnline", "_bin_v2_", "gs"));
                 roots.Add(System.IO.Path.Combine(cocosRoot, "JX1CocosMobile", "pak_file"));
+                roots.Add(System.IO.Path.Combine(cocosRoot, "JX1CocosMobile", "pak_file", "kyuctruyenky"));
+                roots.Add(System.IO.Path.Combine(cocosRoot, "JX1CocosMobile", "pak_file", "jxphongvan"));
                 roots.Add(System.IO.Path.Combine(cocosRoot, "pak_file", "jxmobile"));
                 roots.Add(System.IO.Path.Combine(cocosRoot, "pak_file", "jx1m"));
                 break;
@@ -69,16 +70,30 @@ namespace game
 
         private resource.Buffer GetExternalBufferData()
         {
-            foreach (string root in GetExternalResourceRoots())
+            System.Collections.Generic.List<string> pathCandidates = new()
             {
-                string externalPath = Resource.ReplaceStringPath(root + this.path);
-                if (!System.IO.File.Exists(externalPath))
-                {
-                    continue;
-                }
+                this.path
+            };
 
-                UnityEngine.Debug.Log("game.Resource >> reading external: " + this.path + " => " + externalPath);
-                return System.IO.File.ReadAllBytes(externalPath);
+            const string updatePrefix = "\\update10\\";
+            if (this.path.StartsWith(updatePrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                pathCandidates.Add("\\" + this.path.Substring(updatePrefix.Length));
+            }
+
+            foreach (string pathCandidate in pathCandidates)
+            {
+                foreach (string root in GetExternalResourceRoots())
+                {
+                    string externalPath = Resource.ReplaceStringPath(root + pathCandidate);
+                    if (!System.IO.File.Exists(externalPath))
+                    {
+                        continue;
+                    }
+
+                    UnityEngine.Debug.Log("game.Resource >> reading external: " + this.path + " => " + externalPath);
+                    return System.IO.File.ReadAllBytes(externalPath);
+                }
             }
 
             return new resource.Buffer();

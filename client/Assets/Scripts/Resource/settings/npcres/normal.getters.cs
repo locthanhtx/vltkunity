@@ -36,6 +36,7 @@ namespace game.resource.settings.npcres.normal
             body.frameBegin = (ushort)(body.framePerDirection * (requestDirection - 1));
             body.frameEnd = (ushort)(body.frameBegin + body.framePerDirection - 1);
             body.framePerSeconds = resource.SPR.FPS;
+            body.frameIntervalTicks = allPartInfo.fullBody.intervalRatio > 0 ? allPartInfo.fullBody.intervalRatio : 1;
             body.layerOrder = 2;
 
             result[mapping.settings.NpcRes.Kind.Header.body] = body;
@@ -56,6 +57,7 @@ namespace game.resource.settings.npcres.normal
             shadow.frameBegin = body.frameBegin;
             shadow.frameEnd = body.frameEnd;
             shadow.framePerSeconds = body.framePerSeconds;
+            shadow.frameIntervalTicks = body.frameIntervalTicks;
             shadow.layerOrder = body.layerOrder - 1;
 
             result[mapping.settings.NpcRes.Shadow.partName] = shadow;

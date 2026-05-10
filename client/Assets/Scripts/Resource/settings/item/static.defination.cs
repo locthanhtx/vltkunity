@@ -7,6 +7,8 @@ namespace game.resource.settings.item
         {
             normalEquip,
             goldEquip,
+            platinaEquip,
+            normalItem,
             unidentified,
         }
 
@@ -18,6 +20,7 @@ namespace game.resource.settings.item
             item_materials,
             item_task,
             item_townportal,
+            item_fusion,
             item_number,
         }
 
@@ -34,6 +37,10 @@ namespace game.resource.settings.item
             equip_cuff,
             equip_pendant,
             equip_horse,
+            equip_mask,
+            equip_pifeng,
+            equip_yinjian,
+            equip_shiping,
             equip_detailnum,
         }
 

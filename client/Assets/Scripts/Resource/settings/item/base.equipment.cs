@@ -142,6 +142,16 @@ namespace game.resource.settings.item
             return this.GetKeyGDP() + ", " + this.level;
         }
 
+        public string GetDetailRowKey()
+        {
+            return MakeDetailRowKey(this.detail, this.rowIndex - 1);
+        }
+
+        public static string MakeDetailRowKey(int detail, int axmolRecordIndex)
+        {
+            return detail + ", " + axmolRecordIndex;
+        }
+
         public List<skill.SkillSettingData.KMagicAttrib> GetBasicAttrib()
         {
             return this.baseAttrib;

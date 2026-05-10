@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using game.network;
 using game.network.jx;
 using game.resource.settings.skill;
+using Photon.ShareLibrary.Constant;
 using Photon.ShareLibrary.Handlers;
 using Unity.VisualScripting;
 using UnityEngine;
@@ -17,6 +18,8 @@ namespace game.scene
         private scene.world.Camera mainCamera;
         private resource.settings.NpcRes.Special mainPlayer;
         private resource.Map map;
+        [SerializeField]
+        private bool drawFullMap;
         private readonly Dictionary<resource.settings.npcres.Controller, SmoothMoveState> smoothMoves = new();
         private readonly Dictionary<resource.settings.npcres.Controller, ClassicMoveState> classicMoves = new();
         private readonly Dictionary<resource.settings.npcres.Controller, Vector2> preciseMpsPositions = new();
@@ -46,6 +49,8 @@ namespace game.scene
             public int speed;
             public bool followCamera;
             public int snapDistance;
+            public int direction;
+            public bool isRunning;
         }
 
 
@@ -130,6 +135,7 @@ namespace game.scene
                 return;
             }
 
+            this.ApplyMapFullMapConfig(refreshPosition: true);
             this.map.Update();
         }
 
@@ -226,6 +232,35 @@ namespace game.scene
 
             this.map.SetTextureConfig(mapConfig);
             this.map.SetPosition(this.mainPlayer.GetMapPosition());
+        }
+
+        public void SetMapFullMapEnabled(bool enabled)
+        {
+            this.drawFullMap = enabled;
+            this.ApplyMapFullMapConfig(refreshPosition: true);
+        }
+
+        private void ApplyMapFullMapConfig(bool refreshPosition)
+        {
+            if (this.map == null)
+            {
+                return;
+            }
+
+            resource.map.Config.Textures mapConfig = this.map.GetTextureConfig();
+            int drawFullMapValue = this.drawFullMap ? 1 : 0;
+            if (mapConfig.drawFullMap == drawFullMapValue)
+            {
+                return;
+            }
+
+            mapConfig.drawFullMap = drawFullMapValue;
+            this.map.SetTextureConfig(mapConfig);
+
+            if (refreshPosition && this.mainPlayer != null)
+            {
+                this.map.SetPosition(this.mainPlayer.GetMapPosition());
+            }
         }
 
         public void SetIdentifyNpcTitleEnabled(bool enabled)
@@ -338,6 +373,7 @@ namespace game.scene
                 return;
             }
 
+            this.ApplyMapFullMapConfig(refreshPosition: false);
             this.map.AddDynamicNpc(this.mainPlayer);
 
             UnityEngine.PlayerPrefs.DeleteKey(ClassicPreviewMiniMapWorldKey);
@@ -358,6 +394,7 @@ namespace game.scene
             {
                 this.smoothMoves.Remove(this.mainPlayer);
                 this.classicMoves.Remove(this.mainPlayer);
+                this.mainPlayer.ClearDrivenFrame();
             }
 
             this.ApplyControllerPosition(this.mainPlayer, position, true);
@@ -369,6 +406,7 @@ namespace game.scene
             {
                 this.smoothMoves.Remove(this.mainPlayer);
                 this.classicMoves.Remove(this.mainPlayer);
+                this.mainPlayer.ClearDrivenFrame();
             }
 
             this.ApplyControllerMpsPosition(this.mainPlayer, new Vector2(mpsX, mpsY), true);
@@ -384,9 +422,14 @@ namespace game.scene
             this.MoveControllerToMps(this.mainPlayer, new Vector2(mpsX, mpsY), duration, true, snapDistance, updateDirection);
         }
 
-        public void MoveMainPlayerToClassicMps(int mpsX, int mpsY, int speed, int snapDistance = 768)
+        public void MoveMainPlayerToClassicMps(int mpsX, int mpsY, int speed, int snapDistance = 768, int direction = -1)
         {
-            this.MoveControllerToClassicMps(this.mainPlayer, new Vector2(mpsX, mpsY), speed, true, snapDistance);
+            this.MoveControllerToClassicMps(this.mainPlayer, new Vector2(mpsX, mpsY), speed, true, snapDistance, direction, true);
+        }
+
+        public void MoveMainPlayerToClassicMps(int mpsX, int mpsY, int speed, int snapDistance, int direction, bool isRunning)
+        {
+            this.MoveControllerToClassicMps(this.mainPlayer, new Vector2(mpsX, mpsY), speed, true, snapDistance, direction, isRunning);
         }
 
         public void StepMainPlayerClassic(int direction, int speed)
@@ -404,14 +447,24 @@ namespace game.scene
             this.MoveControllerToMps(npc, new Vector2(mpsX, mpsY), duration, false, snapDistance, updateDirection);
         }
 
-        public void MoveNpcToClassicMps(game.resource.settings.npcres.Controller npc, int mpsX, int mpsY, int speed, int snapDistance = 768)
+        public void MoveNpcToClassicMps(game.resource.settings.npcres.Controller npc, int mpsX, int mpsY, int speed, int snapDistance = 768, int direction = -1)
         {
-            this.MoveControllerToClassicMps(npc, new Vector2(mpsX, mpsY), speed, false, snapDistance);
+            this.MoveControllerToClassicMps(npc, new Vector2(mpsX, mpsY), speed, false, snapDistance, direction, true);
+        }
+
+        public void MoveNpcToClassicMps(game.resource.settings.npcres.Controller npc, int mpsX, int mpsY, int speed, int snapDistance, int direction, bool isRunning)
+        {
+            this.MoveControllerToClassicMps(npc, new Vector2(mpsX, mpsY), speed, false, snapDistance, direction, isRunning);
         }
 
         public Vector2 GetMainPlayerMpsPosition()
         {
             return this.GetControllerMpsPosition(this.mainPlayer);
+        }
+
+        public Vector2 GetNpcMpsPosition(game.resource.settings.npcres.Controller npc)
+        {
+            return this.GetControllerMpsPosition(npc);
         }
 
         public void StopMainPlayerMove()
@@ -442,6 +495,7 @@ namespace game.scene
             {
                 this.smoothMoves.Remove(npc);
                 this.classicMoves.Remove(npc);
+                npc.ClearDrivenFrame();
                 this.preciseMpsPositions[npc] = new Vector2(left, top * 2f);
             }
 
@@ -466,6 +520,7 @@ namespace game.scene
             {
                 this.smoothMoves.Remove(controller);
                 this.classicMoves.Remove(controller);
+                controller.ClearDrivenFrame();
                 this.ApplyControllerPosition(controller, position, followCamera);
                 return;
             }
@@ -504,7 +559,9 @@ namespace game.scene
             Vector2 targetMps,
             int speed,
             bool followCamera,
-            int snapDistance)
+            int snapDistance,
+            int direction,
+            bool isRunning)
         {
             if (controller == null)
             {
@@ -513,10 +570,11 @@ namespace game.scene
 
             Vector2 currentMps = this.GetControllerMpsPosition(controller);
             int moveSpeed = JxClassicMovement.NormalizeMoveSpeed(speed, 1);
-            if (speed <= 0 || Vector2.Distance(currentMps, targetMps) > snapDistance)
+            if (speed <= 0)
             {
                 this.smoothMoves.Remove(controller);
                 this.classicMoves.Remove(controller);
+                controller.ClearDrivenFrame();
                 this.ApplyControllerMpsPosition(controller, targetMps, followCamera);
                 return;
             }
@@ -528,7 +586,9 @@ namespace game.scene
                 targetMps = targetMps,
                 speed = moveSpeed,
                 followCamera = followCamera,
-                snapDistance = snapDistance
+                snapDistance = snapDistance,
+                direction = direction >= 0 && direction <= 63 ? direction : -1,
+                isRunning = isRunning
             };
         }
 
@@ -555,6 +615,7 @@ namespace game.scene
             controller.SyncDirection(direction);
             Vector2 currentMps = this.GetControllerMpsPosition(controller);
             int moveSpeed = JxClassicMovement.NormalizeMoveSpeed(speed, 1);
+            this.ApplyClassicMoveAnimation(controller, true, moveSpeed);
             Vector2 nextMps = JxClassicMovement.AdvanceMpsPosition(currentMps, direction, moveSpeed * frameScale);
             this.ApplyControllerMpsPosition(controller, nextMps, followCamera);
         }
@@ -568,7 +629,8 @@ namespace game.scene
 
             this.smoothMoves.Remove(controller);
             this.classicMoves.Remove(controller);
-            this.ApplyControllerPosition(controller, controller.GetMapPosition(), followCamera);
+            controller.ClearDrivenFrame();
+            this.ApplyControllerMpsPosition(controller, this.GetControllerMpsPosition(controller), followCamera);
         }
 
         private void UpdateClassicMoves()
@@ -595,14 +657,25 @@ namespace game.scene
                 if (distance <= Mathf.Max(0.5f, step))
                 {
                     this.ApplyControllerMpsPosition(state.controller, state.targetMps, state.followCamera);
+                    if (!state.followCamera)
+                    {
+                        NpcAction.DoAction(state.controller, NPCCMD.do_stand);
+                    }
+                    else
+                    {
+                        state.controller.ClearDrivenFrame();
+                    }
                     this.completedClassicMoves.Add(pair.Key);
                     continue;
                 }
 
-                int direction = JxClassicMovement.GetDirection(currentMps, state.targetMps);
+                int direction = state.direction >= 0
+                    ? state.direction
+                    : JxClassicMovement.GetDirection(currentMps, state.targetMps);
                 if (direction >= 0)
                 {
                     state.controller.SyncDirection(direction);
+                    this.ApplyClassicMoveAnimation(state.controller, state.isRunning, state.speed);
                     Vector2 nextMps = JxClassicMovement.AdvanceMpsPosition(currentMps, direction, step);
                     this.ApplyControllerMpsPosition(state.controller, nextMps, state.followCamera);
                 }
@@ -648,6 +721,7 @@ namespace game.scene
 
                 if (progress >= 1f)
                 {
+                    state.controller.ClearDrivenFrame();
                     this.completedSmoothMoves.Add(pair.Key);
                 }
             }
@@ -656,6 +730,19 @@ namespace game.scene
             {
                 this.smoothMoves.Remove(controller);
             }
+        }
+
+        private void ApplyClassicMoveAnimation(game.resource.settings.npcres.Controller controller, bool isRunning, int speed)
+        {
+            if (controller == null)
+            {
+                return;
+            }
+
+            int totalFrame = isRunning
+                ? JxClassicMovement.GetRunAnimationTotalFrame(controller, speed)
+                : JxClassicMovement.GetWalkAnimationTotalFrame(controller, speed);
+            controller.AdvanceDrivenFrame(totalFrame);
         }
 
         private Vector2 GetControllerMpsPosition(game.resource.settings.npcres.Controller controller)

@@ -3,24 +3,46 @@ namespace game.resource.settings.item
 {
     public class Setters : item.Datafield
     {
-        private void SetDataEquipment(item.Database database)
+        private void SetCommonData(item.Database database)
         {
-            this.magicAttrib = new System.Collections.Generic.List<skill.SkillSettingData.KMagicAttrib>();
             this.databaseId = database.databaseId;
             this.type = database.type;
             this.stack = database.stack;
             this.timeUse = database.timeUse;
+            this.level = database.level;
+            this.series = database.series;
+        }
+
+        private void SetDataEquipment(item.Database database)
+        {
+            this.magicAttrib = new System.Collections.Generic.List<skill.SkillSettingData.KMagicAttrib>();
+            this.SetCommonData(database);
 
             switch (this.type)
             {
                 case Defination.Type.normalEquip:
                     this.equipmentBase = item.Getters.GetEquipmentBase(database.genre, database.detail, database.particular, database.level);
+                    if (this.equipmentBase == null && database.detail == (int)Defination.Detail.equip_mask)
+                    {
+                        this.equipmentBase = item.Getters.GetMaskBase(database.genre, database.detail, database.particular);
+                    }
                     this.series = database.series;
                     break;
 
                 case Defination.Type.goldEquip:
                     this.equipmentBase = item.Getters.GetGoldEquipBase(database.rowIndex);
-                    this.series = this.equipmentBase.series;
+                    if (this.equipmentBase != null)
+                    {
+                        this.series = this.equipmentBase.series;
+                    }
+                    break;
+
+                case Defination.Type.platinaEquip:
+                    this.equipmentBase = item.Getters.GetPlatinaEquipBase(database.rowIndex);
+                    if (this.equipmentBase != null)
+                    {
+                        this.series = this.equipmentBase.series;
+                    }
                     break;
             }
 
@@ -38,7 +60,7 @@ namespace game.resource.settings.item
             {
                 if (magicEntry.nAttribType == 0)
                 {
-                    break;
+                    continue;
                 }
 
                 this.magicAttrib.Add(magicEntry);
@@ -47,20 +69,34 @@ namespace game.resource.settings.item
 
         private void SetDataMaskEquip(item.Database database)
         {
+            this.SetCommonData(database);
             this.type = Defination.Type.normalEquip;
             this.equipmentBase = item.Getters.GetMaskBase(database.genre, database.detail, database.particular);
-            this.stack = database.stack;
-            this.timeUse = database.timeUse;
         }
 
         private void SetDataMagicScript(item.Database database)
         {
-            this.databaseId = database.databaseId;
+            this.SetCommonData(database);
             this.magicScriptBase = item.Getters.GetMagicScriptBase(database.genre, database.detail, database.particular);
-            this.level = database.level;
-            this.series = database.series;
-            this.stack = database.stack;
-            this.timeUse = database.timeUse;
+        }
+
+        private void SetDataSimpleItem(item.Database database)
+        {
+            this.magicAttrib = new System.Collections.Generic.List<skill.SkillSettingData.KMagicAttrib>();
+            this.SetCommonData(database);
+            this.type = Defination.Type.normalItem;
+            this.simpleItemBase = item.Getters.GetSimpleItemBase(database.genre, database.detail, database.particular, database.level);
+
+            if (this.simpleItemBase != null)
+            {
+                this.level = database.level > 0 ? database.level : this.simpleItemBase.level;
+                this.series = database.series >= 0 ? database.series : this.simpleItemBase.series;
+
+                if (this.stack <= 0)
+                {
+                    this.stack = this.simpleItemBase.stack > 0 ? 1 : 0;
+                }
+            }
         }
 
         protected void SetData(item.Database database)
@@ -80,8 +116,16 @@ namespace game.resource.settings.item
                     }
                     break;
 
+                case 1:
+                case 2:
+                case 3:
+                case 4:
+                case 5:
+                    this.SetDataSimpleItem(database);
+                    break;
+
                 case 6:
-                    this.SetDataMagicScript(database);
+                    this.SetDataSimpleItem(database);
                     break;
             }
         }

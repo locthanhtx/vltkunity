@@ -10,6 +10,8 @@ namespace game.resource.settings.item
         ///////////////////////////////////////////////////////////////////////////
 
         public string name;
+        public int nextLevel;
+        public int loadModel;
         public int pos;
         public int series;
         public int level;
@@ -28,6 +30,8 @@ namespace game.resource.settings.item
         public void Load(resource.Table table, int rowIndex)
         {
             this.name = table.Get<string>((int)resource.mapping.settings.Item.HeaderIndexer.MagicAttrib.name, rowIndex);
+            this.nextLevel = table.Get<int>((int)resource.mapping.settings.Item.HeaderIndexer.MagicAttrib.nextLevel, rowIndex);
+            this.loadModel = table.Get<int>((int)resource.mapping.settings.Item.HeaderIndexer.MagicAttrib.loadModel, rowIndex);
             this.pos = table.Get<int>((int)resource.mapping.settings.Item.HeaderIndexer.MagicAttrib.pos, rowIndex);
             this.series = table.Get<int>((int)resource.mapping.settings.Item.HeaderIndexer.MagicAttrib.series, rowIndex, MagicattribBase.NoSeri);
             this.level = table.Get<int>((int)resource.mapping.settings.Item.HeaderIndexer.MagicAttrib.level, rowIndex);
@@ -51,6 +55,10 @@ namespace game.resource.settings.item
             int dropRate8BaoTay = table.Get<int>((int)resource.mapping.settings.Item.HeaderIndexer.MagicAttrib.dropRate8BaoTay, rowIndex);
             int dropRate9DayChuyen = table.Get<int>((int)resource.mapping.settings.Item.HeaderIndexer.MagicAttrib.dropRate9DayChuyen, rowIndex);
             int dropRate10Ngua = table.Get<int>((int)resource.mapping.settings.Item.HeaderIndexer.MagicAttrib.dropRate10Ngua, rowIndex);
+            int dropRate11MatNa = table.Get<int>((int)resource.mapping.settings.Item.HeaderIndexer.MagicAttrib.dropRate11MatNa, rowIndex);
+            int dropRate12PhiPhong = table.Get<int>((int)resource.mapping.settings.Item.HeaderIndexer.MagicAttrib.dropRate12PhiPhong, rowIndex);
+            int dropRate13AnGiam = table.Get<int>((int)resource.mapping.settings.Item.HeaderIndexer.MagicAttrib.dropRate13AnGiam, rowIndex);
+            int dropRate14TrangSuc = table.Get<int>((int)resource.mapping.settings.Item.HeaderIndexer.MagicAttrib.dropRate14TrangSuc, rowIndex);
 
             this.droprate = new Dictionary<int, int>()
             {
@@ -65,6 +73,10 @@ namespace game.resource.settings.item
                 {(int)settings.item.Defination.Detail.equip_cuff, dropRate8BaoTay},
                 {(int)settings.item.Defination.Detail.equip_pendant, dropRate9DayChuyen},
                 {(int)settings.item.Defination.Detail.equip_horse, dropRate10Ngua},
+                {(int)settings.item.Defination.Detail.equip_mask, dropRate11MatNa},
+                {(int)settings.item.Defination.Detail.equip_pifeng, dropRate12PhiPhong},
+                {(int)settings.item.Defination.Detail.equip_yinjian, dropRate13AnGiam},
+                {(int)settings.item.Defination.Detail.equip_shiping, dropRate14TrangSuc},
             };
         }
 

@@ -69,7 +69,11 @@ namespace game.resource.settings
                 this.InitForSpecial(characterType, direction, action, headIndex, bodyIndex, weaponIndex, horseIndex);
             }
 
-            public void SetCharacterType(string _characterTypeName) => this.shape.InValidPartList(this.animate.special.SetCharacterType(_characterTypeName));
+            public void SetCharacterType(string _characterTypeName)
+            {
+                settings.Npcs.ApplyPlayerMotionProfile(this.data, _characterTypeName);
+                this.shape.InValidPartList(this.animate.special.SetCharacterType(_characterTypeName));
+            }
 
             public void SetRiding(bool _riding) => this.shape.InValidPartList(this.animate.special.SetRiding(_riding));
 
@@ -101,7 +105,7 @@ namespace game.resource.settings
                 if(this.animate.isSpecialNpc)
                 {
                     this.previousRes = this.animate.special.GetPartGroupRowIndex();
-                    this.shape.InValidPartList(this.animate.GetPartAnimation());
+                    this.shape.InValidPartList(this.animate.GetPartAnimation(), deactivate: true);
                 }
 
                 this.InitForNormal();
@@ -133,7 +137,11 @@ namespace game.resource.settings
                 this.InitForNormal(npcDeclareLine, actionName, direction);
             }
 
-            public void SetNpcDeclareLine(int _declareLine) => this.shape.InValidPartList(this.animate.normal.SetNpcDeclareLine(_declareLine));
+            public void SetNpcDeclareLine(int _declareLine)
+            {
+                settings.Npcs.ApplyNpcMotionProfile(this.data, _declareLine);
+                this.shape.InValidPartList(this.animate.normal.SetNpcDeclareLine(_declareLine));
+            }
         }
     }
 }

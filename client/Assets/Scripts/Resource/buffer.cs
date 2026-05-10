@@ -75,7 +75,60 @@ namespace game.resource
                 if (this.data[0] == 0xfe && this.data[1] == 0xff) return new Encoding(System.Text.Encoding.BigEndianUnicode, 2); //UTF-16BE
             }
 
+            if ((defaultEncoding == null || defaultEncoding.CodePage == 1252) && this.LooksLikeGbkText())
+            {
+                return new Encoding(System.Text.Encoding.GetEncoding(936), 0);
+            }
+
             return new Encoding(defaultEncoding ?? System.Text.Encoding.GetEncoding(1252), 0);
+        }
+
+        private bool LooksLikeGbkText()
+        {
+            int probeSize = System.Math.Min(this.size, 512);
+            if (probeSize <= 0)
+            {
+                return false;
+            }
+
+            string decoded;
+            try
+            {
+                System.Text.Encoding gbk = System.Text.Encoding.GetEncoding(
+                    936,
+                    System.Text.EncoderFallback.ExceptionFallback,
+                    System.Text.DecoderFallback.ExceptionFallback);
+                decoded = gbk.GetString(this.data, 0, probeSize);
+            }
+            catch
+            {
+                return false;
+            }
+
+            int cjkCount = 0;
+            int textCount = 0;
+            foreach (char item in decoded)
+            {
+                if (char.IsControl(item) && item != '\r' && item != '\n' && item != '\t')
+                {
+                    return false;
+                }
+
+                if (char.IsWhiteSpace(item) || item == '\t')
+                {
+                    continue;
+                }
+
+                textCount++;
+                if ((item >= '\u3400' && item <= '\u4dbf')
+                    || (item >= '\u4e00' && item <= '\u9fff')
+                    || (item >= '\uf900' && item <= '\ufaff'))
+                {
+                    cjkCount++;
+                }
+            }
+
+            return cjkCount >= 4 && textCount > 0 && (cjkCount * 100 / textCount) >= 15;
         }
 
         public string GetString()

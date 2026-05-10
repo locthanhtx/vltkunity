@@ -66,6 +66,16 @@ namespace game.resource.mapping.settings
             public const string junpFly = "JunpFly";
         }
 
+        public struct ActionNumberTable
+        {
+            public const string filePath = NpcRes.directoryPath + "¶¯×÷±àºÅ±í.txt";
+
+            public struct Header
+            {
+                public const string actionName = "ActionName";
+            }
+        }
+
         public struct Shadow
         {
             public const string partName = "Shadow";

@@ -183,8 +183,10 @@ namespace game.scene
             }
         }
 
-        public PlayerClick SpwanPlayer(int id, string name, bool sex, byte dir, int mapX, int mapY)
+        public PlayerClick SpwanPlayer(int id, string name, bool sex, int dir, int mapX, int mapY)
         {
+            bool hasDirection = dir >= 0 && dir <= 63;
+
             if (id > 0 && id == PhotonManager.Instance.PlayerId)
             {
                 RegisterMainPlayer(id, name);
@@ -192,7 +194,10 @@ namespace game.scene
                 if (mainPlayer != null && mainPlayer.controller != null)
                 {
                     mainPlayer.controller.SetCharacterType(sex ? NpcRes.SpecialType.man : NpcRes.SpecialType.lady);
-                    mainPlayer.controller.SyncDirection(dir);
+                    if (hasDirection)
+                    {
+                        mainPlayer.controller.SyncDirection(dir);
+                    }
                     mainPlayer.controller.SetMapPosition(mapY, mapX);
                     game.network.jx.JxClassicMovement.EnsureBaseSpeed(mainPlayer.controller);
                 }
@@ -226,7 +231,10 @@ namespace game.scene
 
             newNpc.SetName(name);
             newNpc.SetCharacterType(sex ? NpcRes.SpecialType.man : NpcRes.SpecialType.lady);
-            newNpc.SyncDirection(dir);
+            if (hasDirection)
+            {
+                newNpc.SyncDirection(dir);
+            }
             newNpc.SetMapPosition(mapY, mapX);
             game.network.jx.JxClassicMovement.EnsureBaseSpeed(newNpc);
 
