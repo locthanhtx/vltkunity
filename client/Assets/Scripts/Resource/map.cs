@@ -168,6 +168,12 @@ namespace game.resource
             this.SetPosition(this.currentPosition);
         }
 
+        public void SetTrapGridEnabled(bool enabled)
+        {
+            this.preparingCommand.SetTrapGridEnabled(enabled);
+            this.SetPosition(this.currentPosition);
+        }
+
         public void SetIdentifyConfig(map.Config.Identification identification) => this.textureCommand.SetIdentification(this.identifyConfig = identification);
 
         public map.Config.Identification GetIdentifyConfig() => this.identifyConfig;

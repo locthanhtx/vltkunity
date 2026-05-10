@@ -206,6 +206,14 @@ namespace game.resource.map
                 }
             }
 
+            public void Clear()
+            {
+                lock (this.nodeObstacleData)
+                {
+                    this.nodeObstacleData.Clear();
+                }
+            }
+
             public void RemoveNodeVector(List<map.Position.Node> vector)
             {
                 lock (this.nodeObstacleData)
@@ -234,6 +242,11 @@ namespace game.resource.map
 
             public long GetBarrier(map.Position mapPosition)
             {
+                if (mapPosition == null)
+                {
+                    return 0;
+                }
+
                 map.Position.Node node = mapPosition.GetNode();
 
                 const int RWP_OBSTACLE_WIDTH = 32;
@@ -246,6 +259,10 @@ namespace game.resource.map
 
                 nMapX = nMpsX / RWP_OBSTACLE_WIDTH;
                 nMapY = nMpsY / RWP_OBSTACLE_HEIGHT;
+                if (nMapX < 0 || nMapX >= 16 || nMapY < 0 || nMapY >= 32)
+                {
+                    return 0;
+                }
 
                 lock (this.nodeObstacleData)
                 {

@@ -23,6 +23,7 @@ namespace game.resource.map
                 hideNpc,
                 enableCache,
                 fps,
+                trapGrid,
             }
 
             public class Element
@@ -153,6 +154,16 @@ namespace game.resource.map
                     this.fps = fps;
                 }
             }
+
+            public class TrapGrid : Command.Element
+            {
+                public bool enabled;
+
+                public TrapGrid(bool enabled) : base(Command.ID.trapGrid)
+                {
+                    this.enabled = enabled;
+                }
+            }
         }
 
         ////////////////////////////////////////////////////////////////////////////////
@@ -169,6 +180,7 @@ namespace game.resource.map
         private map.Position.Grid currentGridPosition;
         private map.Position currentOriginPosition;
         private bool fullMapLoaded;
+        private bool drawTrapGrid;
 
         ////////////////////////////////////////////////////////////////////////////////
 
@@ -200,6 +212,7 @@ namespace game.resource.map
             this.currentGridPosition = new map.Position.Grid();
             this.currentOriginPosition = new map.Position();
             this.fullMapLoaded = false;
+            this.drawTrapGrid = false;
 
             this.mainThreadHandle.Start();
         }
@@ -399,6 +412,15 @@ namespace game.resource.map
             }
         }
 
+        public void SetTrapGridEnabled(bool enabled)
+        {
+            lock (this.commandQueue)
+            {
+                this.commandQueue.Enqueue(new Preparing.Command.TrapGrid(enabled));
+                System.Threading.Monitor.Pulse(this.commandQueue);
+            }
+        }
+
         ////////////////////////////////////////////////////////////////////////////////
 
         private void MainThread()
@@ -461,6 +483,10 @@ namespace game.resource.map
 
                     case Preparing.Command.ID.fps:
                         this.MainThread_FPS((Preparing.Command.FPS)command);
+                        break;
+
+                    case Preparing.Command.ID.trapGrid:
+                        this.MainThread_TrapGrid((Preparing.Command.TrapGrid)command);
                         break;
                 }
 
@@ -662,6 +688,7 @@ namespace game.resource.map
 
                 List<map.Obstacle.Data> obstacleDataVector = new List<map.Obstacle.Data>();
                 List<map.Textures.Command.Element> obstacleGridCommands = new List<Textures.Command.Element>();
+                List<map.Textures.Command.Element> trapGridCommands = new List<Textures.Command.Element>();
 
                 foreach (map.Element.Obstacle obstacleIndex in nodeElementsParsed.obstacle)
                 {
@@ -685,6 +712,25 @@ namespace game.resource.map
                             scenePosition: scenePosition
                         ));
                     }
+
+                    if (this.drawTrapGrid
+                        && map.Trap.TryLoad(this.mapInfo.rootPath, obstacleIndex.nodeAssetPosition, out map.Trap.Data trapData))
+                    {
+                        map.Trap.Grid newTrapGrid = new map.Trap.Grid(trapData);
+                        map.Position.Sequential.Node nodeAssetPosition = newTrapGrid.GetNodePosition();
+                        UnityEngine.Vector2 scenePosition = new UnityEngine.Vector3(
+                            (((float)map.Static.nodeMapDimension / 2) + nodeAssetPosition.nodeLeft) / 100,
+                            (((float)map.Static.nodeMapDimension / 2) + nodeAssetPosition.nodeTop) / -100
+                        );
+
+                        newTrapGrid.Initialize();
+                        newTrapGrid.DrawGrid();
+
+                        trapGridCommands.Add(new Textures.Command.AddTrapGrid(
+                            trapGrid: newTrapGrid,
+                            scenePosition: scenePosition
+                        ));
+                    }
                 }
 
                 this.obstacleBarrier.AddDataVector(obstacleDataVector);
@@ -692,6 +738,11 @@ namespace game.resource.map
                 if (this.textureConfig.drawObstacleGrid == 1)
                 {
                     this.textureThread.PushVector(obstacleGridCommands);
+                }
+
+                if (this.drawTrapGrid)
+                {
+                    this.textureThread.PushVector(trapGridCommands);
                 }
             }
 
@@ -915,6 +966,7 @@ namespace game.resource.map
         {
             List<map.Obstacle.Data> obstacleDataVector = new List<map.Obstacle.Data>();
             List<map.Textures.Command.Element> obstacleGridCommands = new List<Textures.Command.Element>();
+            List<map.Textures.Command.Element> trapGridCommands = new List<Textures.Command.Element>();
 
             foreach (map.Element.Obstacle obstacleIndex in nodeElementsParsed.obstacle)
             {
@@ -938,6 +990,25 @@ namespace game.resource.map
                         scenePosition: scenePosition
                     ));
                 }
+
+                if (this.drawTrapGrid
+                    && map.Trap.TryLoad(this.mapInfo.rootPath, obstacleIndex.nodeAssetPosition, out map.Trap.Data trapData))
+                {
+                    map.Trap.Grid newTrapGrid = new map.Trap.Grid(trapData);
+                    map.Position.Sequential.Node nodeAssetPosition = newTrapGrid.GetNodePosition();
+                    UnityEngine.Vector2 scenePosition = new UnityEngine.Vector3(
+                        (((float)map.Static.nodeMapDimension / 2) + nodeAssetPosition.nodeLeft) / 100,
+                        (((float)map.Static.nodeMapDimension / 2) + nodeAssetPosition.nodeTop) / -100
+                    );
+
+                    newTrapGrid.Initialize();
+                    newTrapGrid.DrawGrid();
+
+                    trapGridCommands.Add(new Textures.Command.AddTrapGrid(
+                        trapGrid: newTrapGrid,
+                        scenePosition: scenePosition
+                    ));
+                }
             }
 
             this.obstacleBarrier.AddDataVector(obstacleDataVector);
@@ -945,6 +1016,11 @@ namespace game.resource.map
             if (this.textureConfig.drawObstacleGrid == 1)
             {
                 this.textureThread.PushVector(obstacleGridCommands);
+            }
+
+            if (this.drawTrapGrid)
+            {
+                this.textureThread.PushVector(trapGridCommands);
             }
         }
 
@@ -958,6 +1034,7 @@ namespace game.resource.map
             this.currentGridPosition = new map.Position.Grid();
             this.currentOriginPosition = new map.Position();
             this.fullMapLoaded = false;
+            this.obstacleBarrier.Clear();
 
             this.cacheGridTextures.Clear();
             this.cacheStaticNpc.Clear();
@@ -1150,6 +1227,22 @@ namespace game.resource.map
         private void MainThread_FPS(Preparing.Command.FPS _command)
         {
             this.textureThread.PushCommand(new Textures.Command.FPS(_command.fps));
+        }
+
+        private void MainThread_TrapGrid(Preparing.Command.TrapGrid _command)
+        {
+            if (this.drawTrapGrid == _command.enabled)
+            {
+                return;
+            }
+
+            this.drawTrapGrid = _command.enabled;
+            this.fullMapLoaded = false;
+            this.currentGridPosition = new map.Position.Grid(int.MinValue, int.MinValue);
+            this.currentOriginPosition = new map.Position(-1000000000, -1000000000);
+            this.cacheGridTextures.Clear();
+            this.obstacleBarrier.Clear();
+            this.textureThread.Reset(true, false, false);
         }
     }
 

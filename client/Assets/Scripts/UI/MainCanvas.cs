@@ -101,16 +101,30 @@ public class MainCanvas : MonoBehaviour
                 return;
             }
 
-            isMove = true;
-            PhotonManager.Instance.SetClassicLocalMovementActive(true);
+            bool wasMoving = isMove;
             int direction = JoystickDirectionToClassicDir(moveDirection);
             game.network.jx.JxClassicMovement.EnsureBaseSpeed(world.GetMainPlayer());
             int speed = game.network.jx.JxClassicMovement.NormalizeRunSpeed(Mathf.Max(
                 PhotonManager.Instance.ClassicRunSpeed,
                 game.network.jx.JxClassicMovement.GetCurrentRunSpeed(world.GetMainPlayer())));
 
-            world.StepMainPlayerClassic(direction, speed);
-            world.GetMainPlayer().SyncDirection(direction);
+            bool moved = world.TryStepMainPlayerClassic(direction, speed, out int actualDirection);
+            if (!moved)
+            {
+                if (wasMoving)
+                {
+                    SendStopMove();
+                }
+
+                isMove = false;
+                nextClassicMoveSendTime = 0f;
+                PhotonManager.Instance.SetClassicLocalMovementActive(false);
+                NpcAction.DoAction(world.GetMainPlayer(), NPCCMD.do_stand);
+                return;
+            }
+
+            isMove = true;
+            PhotonManager.Instance.SetClassicLocalMovementActive(true);
             NpcAction.DoAction(world.GetMainPlayer(), NPCCMD.do_run);
 
             if (Time.time < nextClassicMoveSendTime)
@@ -123,10 +137,21 @@ public class MainCanvas : MonoBehaviour
             int distance = game.network.jx.JxClassicMovement.GetRunTargetDistance(speed);
 
             Vector2 playerMpsPosition = world.GetMainPlayerMpsPosition();
-            Vector2 targetMpsPosition = game.network.jx.JxClassicMovement.AdvanceMpsPosition(
+            Vector2 targetMpsPosition = world.ClampMoveTargetByObstacle(
                 playerMpsPosition,
-                direction,
-                distance);
+                actualDirection,
+                distance,
+                out _);
+            if (Vector2.Distance(playerMpsPosition, targetMpsPosition) < 1f)
+            {
+                isMove = false;
+                nextClassicMoveSendTime = 0f;
+                world.StopMainPlayerMove();
+                NpcAction.DoAction(world.GetMainPlayer(), NPCCMD.do_stand);
+                SendStopMove();
+                return;
+            }
+
             int targetLeft = Mathf.RoundToInt(targetMpsPosition.x);
             int targetMapY = Mathf.RoundToInt(targetMpsPosition.y);
 
@@ -142,14 +167,7 @@ public class MainCanvas : MonoBehaviour
                 {
                     world.StopMainPlayerMove();
                     NpcAction.DoAction(world.GetMainPlayer(), NPCCMD.do_stand);
-                    Vector2 playerMpsPosition = world.GetMainPlayerMpsPosition();
-                    PhotonManager.Instance.SetClassicLocalMovementActive(false);
-                    PhotonManager.Instance.TrySendOperation(OperationCode.StopMove, new Dictionary<byte, object>
-                    {
-                        {(byte) ParamterCode.MapId, 0 },
-                        {(byte) ParamterCode.MapX, Mathf.RoundToInt(playerMpsPosition.x)},
-                        {(byte) ParamterCode.MapY, Mathf.RoundToInt(playerMpsPosition.y)},
-                    });
+                    SendStopMove();
                 }
                 else
                 {
@@ -162,6 +180,25 @@ public class MainCanvas : MonoBehaviour
                 //Debug.Log("KO SYNC DI CHUYEN");
             }
         }
+    }
+
+    private void SendStopMove()
+    {
+        if (ResolveWorld() && world.GetMainPlayer() != null)
+        {
+            Vector2 playerMpsPosition = world.GetMainPlayerMpsPosition();
+            PhotonManager.Instance.SetClassicLocalMovementActive(false);
+            PhotonManager.Instance.TrySendOperation(OperationCode.StopMove, new Dictionary<byte, object>
+            {
+                {(byte) ParamterCode.MapId, 0 },
+                {(byte) ParamterCode.MapX, Mathf.RoundToInt(playerMpsPosition.x)},
+                {(byte) ParamterCode.MapY, Mathf.RoundToInt(playerMpsPosition.y)},
+            });
+            return;
+        }
+
+        PhotonManager.Instance.SetClassicLocalMovementActive(false);
+        PhotonManager.Instance.TrySendOperation(OperationCode.StopMove, new Dictionary<byte, object>());
     }
 
     private bool ResolveWorld()

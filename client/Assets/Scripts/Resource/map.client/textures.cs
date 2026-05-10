@@ -25,6 +25,7 @@ namespace game.resource.map
                 enableCache,
                 fps,
                 addObstacleGrid,
+                addTrapGrid,
                 removeNode,
                 identification,
                 castSkill,
@@ -203,6 +204,18 @@ namespace game.resource.map
                 }
             }
 
+            public class AddTrapGrid : Command.Element
+            {
+                public map.Trap.Grid trapGrid;
+                public UnityEngine.Vector2 scenePosition;
+
+                public AddTrapGrid(map.Trap.Grid trapGrid, UnityEngine.Vector2 scenePosition) : base(Command.ID.addTrapGrid)
+                {
+                    this.trapGrid = trapGrid;
+                    this.scenePosition = scenePosition;
+                }
+            }
+
             public class RemoveNode : Command.Element
             {
                 public map.Position.Node nodePosition;
@@ -305,6 +318,7 @@ namespace game.resource.map
         private readonly Textures.SpriteStorageCache spriteStorageCache;
         private readonly Dictionary<int, Dictionary<int, List<UnityEngine.GameObject>>> ownedByGrid;
         private readonly Dictionary<int, Dictionary<int, UnityEngine.GameObject>> ownedByNode;
+        private readonly Dictionary<int, Dictionary<int, UnityEngine.GameObject>> ownedTrapByNode;
         private readonly Dictionary<settings.npcres.Controller, bool> specialNpcs;
         private readonly Dictionary<settings.npcres.Controller, bool> normalNpcs;
         private readonly Dictionary<settings.skill.Missile, bool> missiles;
@@ -321,6 +335,7 @@ namespace game.resource.map
             this.spriteStorageCache = new Textures.SpriteStorageCache();
             this.ownedByGrid = new Dictionary<int, Dictionary<int, List<UnityEngine.GameObject>>>();
             this.ownedByNode = new Dictionary<int, Dictionary<int, UnityEngine.GameObject>>();
+            this.ownedTrapByNode = new Dictionary<int, Dictionary<int, UnityEngine.GameObject>>();
             this.specialNpcs = new Dictionary<settings.npcres.Controller, bool>();
             this.normalNpcs = new Dictionary<settings.npcres.Controller, bool>();
             this.missiles = new Dictionary<settings.skill.Missile, bool>();
@@ -610,6 +625,10 @@ namespace game.resource.map
 
                     case Textures.Command.ID.addObstacleGrid:
                         this.Command_AddObstacleGrid((Textures.Command.AddObstacleGrid)command);
+                        break;
+
+                    case Textures.Command.ID.addTrapGrid:
+                        this.Command_AddTrapGrid((Textures.Command.AddTrapGrid)command);
                         break;
 
                     case Textures.Command.ID.removeNode:
@@ -988,6 +1007,16 @@ namespace game.resource.map
 
                 this.ownedByNode.Clear();
 
+                foreach (KeyValuePair<int, Dictionary<int, UnityEngine.GameObject>> trapGridIndex in this.ownedTrapByNode)
+                {
+                    foreach (KeyValuePair<int, UnityEngine.GameObject> gameObjectIndex in trapGridIndex.Value)
+                    {
+                        UnityEngine.GameObject.Destroy(gameObjectIndex.Value);
+                    }
+                }
+
+                this.ownedTrapByNode.Clear();
+
                 this.Command_Reset_DestroyCacheStorage(this.spriteStorageCache.groundNodeStorage);
                 this.spriteStorageCache.groundNodeStorage.Clear();
                 this.Command_Reset_DestroyCacheStorage(this.spriteStorageCache.groundObjectStorage);
@@ -1168,6 +1197,28 @@ namespace game.resource.map
             this.ownedByNode[nodePosition.nodeTop][nodePosition.nodeLeft] = newGameObject;
         }
 
+        private void Command_AddTrapGrid(Textures.Command.AddTrapGrid _command)
+        {
+            map.Position.Sequential.Node nodePosition = _command.trapGrid.GetNodePosition();
+
+            UnityEngine.GameObject newGameObject = new UnityEngine.GameObject("trap.grid." + nodePosition.nodeTop + "." + nodePosition.nodeLeft);
+            UnityEngine.SpriteRenderer spriteRenderer = newGameObject.AddComponent<UnityEngine.SpriteRenderer>();
+
+            spriteRenderer.sprite = _command.trapGrid.CreateSprite();
+            spriteRenderer.sortingOrder = short.MaxValue - 1;
+
+            newGameObject.transform.position = _command.scenePosition;
+            newGameObject.transform.localScale = new UnityEngine.Vector2(map.Trap.Grid.scaleDown, map.Trap.Grid.scaleDown);
+            newGameObject.transform.parent = this.layers.groundObject.transform;
+
+            if (this.ownedTrapByNode.ContainsKey(nodePosition.nodeTop) == false)
+            {
+                this.ownedTrapByNode[nodePosition.nodeTop] = new Dictionary<int, UnityEngine.GameObject>();
+            }
+
+            this.ownedTrapByNode[nodePosition.nodeTop][nodePosition.nodeLeft] = newGameObject;
+        }
+
         private void Command_RemoveNode(Textures.Command.RemoveNode _command)
         {
             if(this.ownedByNode.ContainsKey(_command.nodePosition.nodeTop) == true)
@@ -1184,6 +1235,21 @@ namespace game.resource.map
                     this.ownedByNode.Remove(_command.nodePosition.nodeTop);
                 }
             }    
+
+            if (this.ownedTrapByNode.ContainsKey(_command.nodePosition.nodeTop) == true)
+            {
+                if (this.ownedTrapByNode[_command.nodePosition.nodeTop].ContainsKey(_command.nodePosition.nodeLeft) == true)
+                {
+                    UnityEngine.GameObject.Destroy(this.ownedTrapByNode[_command.nodePosition.nodeTop][_command.nodePosition.nodeLeft]);
+
+                    this.ownedTrapByNode[_command.nodePosition.nodeTop].Remove(_command.nodePosition.nodeLeft);
+                }
+
+                if (this.ownedTrapByNode[_command.nodePosition.nodeTop].Count <= 0)
+                {
+                    this.ownedTrapByNode.Remove(_command.nodePosition.nodeTop);
+                }
+            }
         }
 
         private void Command_Identification(Textures.Command.Identification _command)

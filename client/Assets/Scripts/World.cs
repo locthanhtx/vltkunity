@@ -14,14 +14,21 @@ namespace game.scene
     {
         private const string ClassicPreviewNoMapPipelineKey = "CLASSIC_PREVIEW_NO_MAP_PIPELINE";
         private const string ClassicPreviewMiniMapWorldKey = "CLASSIC_PREVIEW_MINIMAP_WORLD";
+        private static readonly int[] ClassicSlideDirectionOffsets = { 0, -2, 2, -4, 4, -6, 6, -8, 8, -12, 12, -16, 16 };
 
         private scene.world.Camera mainCamera;
         private resource.settings.NpcRes.Special mainPlayer;
         private resource.Map map;
         [SerializeField]
         private bool drawFullMap;
+        [SerializeField]
+        private bool drawObstacleGrid;
+        [SerializeField]
+        private bool drawTrapGrid;
+        private bool appliedDrawTrapGrid;
         private readonly Dictionary<resource.settings.npcres.Controller, SmoothMoveState> smoothMoves = new();
         private readonly Dictionary<resource.settings.npcres.Controller, ClassicMoveState> classicMoves = new();
+        private readonly Dictionary<resource.settings.npcres.Controller, int> classicResolvedDirections = new();
         private readonly Dictionary<resource.settings.npcres.Controller, Vector2> preciseMpsPositions = new();
         private readonly List<resource.settings.npcres.Controller> completedSmoothMoves = new();
         private readonly List<resource.settings.npcres.Controller> completedClassicMoves = new();
@@ -136,6 +143,7 @@ namespace game.scene
             }
 
             this.ApplyMapFullMapConfig(refreshPosition: true);
+            this.ApplyMapDebugOverlayConfig(refreshPosition: true);
             this.map.Update();
         }
 
@@ -227,11 +235,14 @@ namespace game.scene
 
         public void SetMapObstacleGridEnabled(bool enabled)
         {
-            resource.map.Config.Textures mapConfig = this.map.GetTextureConfig();
-            mapConfig.drawObstacleGrid = enabled ? 1 : 0;
+            this.drawObstacleGrid = enabled;
+            this.ApplyMapDebugOverlayConfig(refreshPosition: true);
+        }
 
-            this.map.SetTextureConfig(mapConfig);
-            this.map.SetPosition(this.mainPlayer.GetMapPosition());
+        public void SetMapTrapGridEnabled(bool enabled)
+        {
+            this.drawTrapGrid = enabled;
+            this.ApplyMapDebugOverlayConfig(refreshPosition: true);
         }
 
         public void SetMapFullMapEnabled(bool enabled)
@@ -256,6 +267,40 @@ namespace game.scene
 
             mapConfig.drawFullMap = drawFullMapValue;
             this.map.SetTextureConfig(mapConfig);
+
+            if (refreshPosition && this.mainPlayer != null)
+            {
+                this.map.SetPosition(this.mainPlayer.GetMapPosition());
+            }
+        }
+
+        private void ApplyMapDebugOverlayConfig(bool refreshPosition)
+        {
+            if (this.map == null)
+            {
+                return;
+            }
+
+            resource.map.Config.Textures mapConfig = this.map.GetTextureConfig();
+            int drawObstacleGridValue = this.drawObstacleGrid ? 1 : 0;
+            bool obstacleGridChanged = mapConfig.drawObstacleGrid != drawObstacleGridValue;
+            bool trapGridChanged = this.appliedDrawTrapGrid != this.drawTrapGrid;
+            if (obstacleGridChanged == false && trapGridChanged == false)
+            {
+                return;
+            }
+
+            if (obstacleGridChanged)
+            {
+                mapConfig.drawObstacleGrid = drawObstacleGridValue;
+                this.map.SetTextureConfig(mapConfig);
+            }
+
+            if (trapGridChanged)
+            {
+                this.map.SetTrapGridEnabled(this.drawTrapGrid);
+                this.appliedDrawTrapGrid = this.drawTrapGrid;
+            }
 
             if (refreshPosition && this.mainPlayer != null)
             {
@@ -352,6 +397,7 @@ namespace game.scene
         {
             this.smoothMoves.Clear();
             this.classicMoves.Clear();
+            this.classicResolvedDirections.Clear();
             this.preciseMpsPositions.Clear();
             this.ApplyControllerPosition(this.mainPlayer, position, false);
 
@@ -374,6 +420,7 @@ namespace game.scene
             }
 
             this.ApplyMapFullMapConfig(refreshPosition: false);
+            this.ApplyMapDebugOverlayConfig(refreshPosition: false);
             this.map.AddDynamicNpc(this.mainPlayer);
 
             UnityEngine.PlayerPrefs.DeleteKey(ClassicPreviewMiniMapWorldKey);
@@ -394,6 +441,7 @@ namespace game.scene
             {
                 this.smoothMoves.Remove(this.mainPlayer);
                 this.classicMoves.Remove(this.mainPlayer);
+                this.classicResolvedDirections.Remove(this.mainPlayer);
                 this.mainPlayer.ClearDrivenFrame();
             }
 
@@ -406,6 +454,7 @@ namespace game.scene
             {
                 this.smoothMoves.Remove(this.mainPlayer);
                 this.classicMoves.Remove(this.mainPlayer);
+                this.classicResolvedDirections.Remove(this.mainPlayer);
                 this.mainPlayer.ClearDrivenFrame();
             }
 
@@ -432,9 +481,14 @@ namespace game.scene
             this.MoveControllerToClassicMps(this.mainPlayer, new Vector2(mpsX, mpsY), speed, true, snapDistance, direction, isRunning);
         }
 
-        public void StepMainPlayerClassic(int direction, int speed)
+        public bool StepMainPlayerClassic(int direction, int speed)
         {
-            this.StepControllerClassic(this.mainPlayer, direction, speed, true);
+            return this.TryStepMainPlayerClassic(direction, speed, out _);
+        }
+
+        public bool TryStepMainPlayerClassic(int direction, int speed, out int actualDirection)
+        {
+            return this.StepControllerClassic(this.mainPlayer, direction, speed, true, out actualDirection);
         }
 
         public void MoveNpcTo(game.resource.settings.npcres.Controller npc, game.resource.map.Position position, float duration, int snapDistance = 768, bool updateDirection = true)
@@ -467,6 +521,32 @@ namespace game.scene
             return this.GetControllerMpsPosition(npc);
         }
 
+        public bool IsMpsBlocked(Vector2 mpsPosition)
+        {
+            return this.IsClassicMpsBlocked(mpsPosition);
+        }
+
+        public Vector2 ClampMoveTargetByObstacle(Vector2 startMps, int direction, float distance)
+        {
+            return this.ClampMoveTargetByObstacle(startMps, direction, distance, out _);
+        }
+
+        public Vector2 ClampMoveTargetByObstacle(Vector2 startMps, int direction, float distance, out int actualDirection)
+        {
+            actualDirection = direction;
+            if (direction < 0 || direction > 63 || distance <= 0f)
+            {
+                return startMps;
+            }
+
+            if (this.TryResolveClassicMove(startMps, direction, distance, out actualDirection, out Vector2 targetMps))
+            {
+                return targetMps;
+            }
+
+            return startMps;
+        }
+
         public void StopMainPlayerMove()
         {
             this.StopControllerMove(this.mainPlayer, true);
@@ -495,6 +575,7 @@ namespace game.scene
             {
                 this.smoothMoves.Remove(npc);
                 this.classicMoves.Remove(npc);
+                this.classicResolvedDirections.Remove(npc);
                 npc.ClearDrivenFrame();
                 this.preciseMpsPositions[npc] = new Vector2(left, top * 2f);
             }
@@ -520,6 +601,7 @@ namespace game.scene
             {
                 this.smoothMoves.Remove(controller);
                 this.classicMoves.Remove(controller);
+                this.classicResolvedDirections.Remove(controller);
                 controller.ClearDrivenFrame();
                 this.ApplyControllerPosition(controller, position, followCamera);
                 return;
@@ -574,6 +656,7 @@ namespace game.scene
             {
                 this.smoothMoves.Remove(controller);
                 this.classicMoves.Remove(controller);
+                this.classicResolvedDirections.Remove(controller);
                 controller.ClearDrivenFrame();
                 this.ApplyControllerMpsPosition(controller, targetMps, followCamera);
                 return;
@@ -592,15 +675,17 @@ namespace game.scene
             };
         }
 
-        private void StepControllerClassic(
+        private bool StepControllerClassic(
             game.resource.settings.npcres.Controller controller,
             int direction,
             int speed,
-            bool followCamera)
+            bool followCamera,
+            out int actualDirection)
         {
+            actualDirection = direction;
             if (controller == null || direction < 0 || direction > 63 || speed <= 0)
             {
-                return;
+                return false;
             }
 
             this.smoothMoves.Remove(controller);
@@ -612,12 +697,177 @@ namespace game.scene
                 frameScale = 1f;
             }
 
-            controller.SyncDirection(direction);
             Vector2 currentMps = this.GetControllerMpsPosition(controller);
             int moveSpeed = JxClassicMovement.NormalizeMoveSpeed(speed, 1);
+            int previousDirection = this.classicResolvedDirections.TryGetValue(controller, out int resolvedDirection)
+                ? resolvedDirection
+                : -1;
+            if (this.TryResolveClassicMove(currentMps, direction, moveSpeed * frameScale, previousDirection, out actualDirection, out Vector2 nextMps) == false)
+            {
+                this.classicResolvedDirections.Remove(controller);
+                controller.ClearDrivenFrame();
+                this.ApplyControllerMpsPosition(controller, currentMps, followCamera);
+                return false;
+            }
+
+            this.classicResolvedDirections[controller] = actualDirection;
+            controller.SyncDirection(GetClassicDisplayDirection(direction, actualDirection));
             this.ApplyClassicMoveAnimation(controller, true, moveSpeed);
-            Vector2 nextMps = JxClassicMovement.AdvanceMpsPosition(currentMps, direction, moveSpeed * frameScale);
             this.ApplyControllerMpsPosition(controller, nextMps, followCamera);
+            return true;
+        }
+
+        private bool TryResolveClassicMove(
+            Vector2 currentMps,
+            int direction,
+            float distance,
+            out int actualDirection,
+            out Vector2 nextMps)
+        {
+            return this.TryResolveClassicMove(currentMps, direction, distance, -1, out actualDirection, out nextMps);
+        }
+
+        private bool TryResolveClassicMove(
+            Vector2 currentMps,
+            int direction,
+            float distance,
+            int previousDirection,
+            out int actualDirection,
+            out Vector2 nextMps)
+        {
+            actualDirection = direction;
+            nextMps = currentMps;
+
+            foreach (int candidateDirection in GetClassicSlideDirectionCandidates(direction, previousDirection))
+            {
+                if (this.TryAdvanceClassicMpsPosition(currentMps, candidateDirection, distance, out nextMps))
+                {
+                    actualDirection = candidateDirection;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool TryAdvanceClassicMpsPosition(Vector2 startMps, int direction, float distance, out Vector2 nextMps)
+        {
+            nextMps = startMps;
+            int sampleCount = Mathf.Max(1, Mathf.CeilToInt(distance / 16f));
+            for (int index = 1; index <= sampleCount; index++)
+            {
+                float sampleDistance = distance * index / sampleCount;
+                Vector2 sampleMps = JxClassicMovement.AdvanceMpsPosition(startMps, direction, sampleDistance);
+                if (this.IsClassicMpsBlocked(sampleMps))
+                {
+                    return false;
+                }
+
+                nextMps = sampleMps;
+            }
+
+            return true;
+        }
+
+        private static IEnumerable<int> GetClassicSlideDirectionCandidates(int direction, int previousDirection)
+        {
+            HashSet<int> emitted = new HashSet<int>();
+            int normalizedDirection = NormalizeClassicDirection(direction);
+            emitted.Add(normalizedDirection);
+            yield return normalizedDirection;
+
+            if (previousDirection >= 0)
+            {
+                int normalizedPrevious = NormalizeClassicDirection(previousDirection);
+                if (GetClassicDirectionDistance(normalizedDirection, normalizedPrevious) <= 16 && emitted.Add(normalizedPrevious))
+                {
+                    yield return normalizedPrevious;
+                }
+            }
+
+            foreach (int offset in GetClassicSlideOffsets(direction, previousDirection))
+            {
+                int candidate = NormalizeClassicDirection(direction + offset);
+                if (emitted.Add(candidate))
+                {
+                    yield return candidate;
+                }
+            }
+        }
+
+        private static IEnumerable<int> GetClassicSlideOffsets(int direction, int previousDirection)
+        {
+            if (previousDirection < 0)
+            {
+                foreach (int offset in ClassicSlideDirectionOffsets)
+                {
+                    yield return offset;
+                }
+
+                yield break;
+            }
+
+            int previousDelta = GetSignedClassicDirectionDelta(direction, previousDirection);
+            int firstSign = previousDelta < 0 ? -1 : 1;
+            int secondSign = -firstSign;
+            int[] magnitudes = { 2, 4, 6, 8, 12, 16 };
+            foreach (int magnitude in magnitudes)
+            {
+                yield return firstSign * magnitude;
+            }
+
+            foreach (int magnitude in magnitudes)
+            {
+                yield return secondSign * magnitude;
+            }
+        }
+
+        private static int GetClassicDisplayDirection(int requestedDirection, int actualDirection)
+        {
+            return GetClassicDirectionDistance(requestedDirection, actualDirection) <= 8
+                ? NormalizeClassicDirection(requestedDirection)
+                : NormalizeClassicDirection(actualDirection);
+        }
+
+        private static int GetClassicDirectionDistance(int directionA, int directionB)
+        {
+            return System.Math.Abs(GetSignedClassicDirectionDelta(directionA, directionB));
+        }
+
+        private static int GetSignedClassicDirectionDelta(int fromDirection, int toDirection)
+        {
+            int delta = NormalizeClassicDirection(toDirection) - NormalizeClassicDirection(fromDirection);
+            if (delta > 32)
+            {
+                delta -= 64;
+            }
+            else if (delta < -32)
+            {
+                delta += 64;
+            }
+
+            return delta;
+        }
+
+        private static int NormalizeClassicDirection(int direction)
+        {
+            direction %= 64;
+            if (direction < 0)
+            {
+                direction += 64;
+            }
+
+            return direction;
+        }
+
+        private bool IsClassicMpsBlocked(Vector2 mpsPosition)
+        {
+            if (this.map == null)
+            {
+                return false;
+            }
+
+            return this.map.HasBarrier(JxClassicMovement.ToMapPosition(mpsPosition));
         }
 
         private void StopControllerMove(game.resource.settings.npcres.Controller controller, bool followCamera)
@@ -629,6 +879,7 @@ namespace game.scene
 
             this.smoothMoves.Remove(controller);
             this.classicMoves.Remove(controller);
+            this.classicResolvedDirections.Remove(controller);
             controller.ClearDrivenFrame();
             this.ApplyControllerMpsPosition(controller, this.GetControllerMpsPosition(controller), followCamera);
         }
@@ -684,6 +935,7 @@ namespace game.scene
             foreach (resource.settings.npcres.Controller controller in this.completedClassicMoves)
             {
                 this.classicMoves.Remove(controller);
+                this.classicResolvedDirections.Remove(controller);
             }
         }
 
