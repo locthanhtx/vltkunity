@@ -3,15 +3,49 @@ namespace game.resource.settings.skill
 {
     public class SkillSetting : skill.SkillSettingGetter
     {
-        public static skill.SkillSetting Get(int skillId, int skillLevel)
+        public static skill.SkillSetting GetBase(int skillId)
         {
-            int cacheKey = (skillId * 100) + skillLevel;
+            int cacheKey = -skillId;
+
+            if (skillId <= 0)
+            {
+                return null;
+            }
 
             if (Cache.Settings.Skill.skillsIdToDataMapping.ContainsKey(cacheKey) == false)
             {
                 skill.SkillSetting newSkillSetting = new skill.SkillSetting();
                 newSkillSetting.LoadBase(skillId);
-                newSkillSetting.LoadLevel(skillId, skillLevel);
+                Cache.Settings.Skill.skillsIdToDataMapping[cacheKey] = newSkillSetting;
+            }
+
+            return Cache.Settings.Skill.skillsIdToDataMapping[cacheKey];
+        }
+
+        public static skill.SkillSetting Get(int skillId, int skillLevel)
+        {
+            int cacheKey = (skillId * 100) + skillLevel;
+
+            if (skillId <= 0)
+            {
+                return null;
+            }
+
+            if (Cache.Settings.Skill.skillsIdToDataMapping.ContainsKey(cacheKey) == false)
+            {
+                skill.SkillSetting newSkillSetting = new skill.SkillSetting();
+                newSkillSetting.LoadBase(skillId);
+                try
+                {
+                    newSkillSetting.LoadLevel(skillId, skillLevel);
+                }
+                catch (System.Exception exception)
+                {
+                    UnityEngine.Debug.LogWarning(
+                        "Skill level data failed. skillId=" + skillId +
+                        " level=" + skillLevel +
+                        " error=" + exception);
+                }
 
                 Cache.Settings.Skill.skillsIdToDataMapping[cacheKey] = newSkillSetting;
             }

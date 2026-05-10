@@ -109,6 +109,10 @@ namespace game.resource.settings.skill.missile
             //UnityEngine.Debug.Log("Start Vanish Effect");
 
             skill.MissileSetting.AnimateFile missileRes = this.missileSetting.GetAnimateFile(Defination.MissleStatus.MS_DoVanish);
+            if (missileRes == null && this.missileSetting.m_bCollideVanish != 0)
+            {
+                missileRes = this.missileSetting.GetAnimateFile(Defination.MissleStatus.MS_DoCollision);
+            }
 
             if (missileRes != null && missileRes.nInterval > 0 && missileRes.nDir > 0 && missileRes.nTotalFrame > 0)
             {

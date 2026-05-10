@@ -121,16 +121,19 @@ namespace game.resource.settings.skill
             return null;
         }
 
+        public bool IsValid()
+        {
+            return this.m_nMissleId > 0 && this.m_MissleRes != null;
+        }
+
         ////////////////////////////////////////////////////////////////////////////////
 
         private void LoadMissile(int missileId)
         {
-            if (Cache.Settings.Skill.missilesIdToRowIndexMapping.ContainsKey(missileId) == false)
+            if (TryResolveMissileRowIndex(missileId, out int rowIndex) == false)
             {
                 return;
             }
-
-            int rowIndex = Cache.Settings.Skill.missilesIdToRowIndexMapping[missileId];
 
             this.m_nMissleId = missileId;
             this.m_szMissleName = Cache.Settings.Skill.missilesTable.Get<string>((int)mapping.settings.Missile.HeaderIndexer.MissleName, rowIndex);
@@ -181,6 +184,36 @@ namespace game.resource.settings.skill
             this.m_nSubStart = Cache.Settings.Skill.missilesTable.Get<int>((int)mapping.settings.Missile.HeaderIndexer.SubStart, rowIndex);
             this.m_nSubStop = Cache.Settings.Skill.missilesTable.Get<int>((int)mapping.settings.Missile.HeaderIndexer.SubStop, rowIndex);
             this.m_bFollowNpcWhenCollid = Cache.Settings.Skill.missilesTable.Get<int>((int)mapping.settings.Missile.HeaderIndexer.ColFollowTarget, rowIndex);
+        }
+
+        private static bool TryResolveMissileRowIndex(int missileId, out int rowIndex)
+        {
+            rowIndex = -1;
+
+            if (missileId <= 0 || Cache.Settings.Skill.missilesTable == null)
+            {
+                return false;
+            }
+
+            if (missileId > 0 && missileId < Cache.Settings.Skill.missilesTable.RowCount)
+            {
+                rowIndex = missileId;
+                return true;
+            }
+
+            if (Cache.Settings.Skill.missilesIdToRowIndexMapping != null
+                && Cache.Settings.Skill.missilesIdToRowIndexMapping.TryGetValue(missileId, out int mappedRowIndex)
+                && mappedRowIndex > 0
+                && mappedRowIndex < Cache.Settings.Skill.missilesTable.RowCount)
+            {
+                rowIndex = mappedRowIndex;
+                return true;
+            }
+
+            UnityEngine.Debug.LogWarning(
+                "SkillProbe missile row missing id=" + missileId +
+                " rowCount=" + Cache.Settings.Skill.missilesTable.RowCount);
+            return false;
         }
 
         ////////////////////////////////////////////////////////////////////////////////

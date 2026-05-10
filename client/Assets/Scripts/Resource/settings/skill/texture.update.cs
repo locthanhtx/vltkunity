@@ -3,6 +3,8 @@ namespace game.resource.settings.skill.texture
 {
     public class Updates : skill.texture.Data
     {
+        private static readonly System.Collections.Generic.HashSet<string> SkillProbeLogs = new();
+
         public void Update()
         {
             if (this.updateRemaining > 0)
@@ -30,6 +32,13 @@ namespace game.resource.settings.skill.texture
 
             if(sprFrame == null)
             {
+                string probeKey = this.spr.path + "#" + this.spr.frameIndex;
+                if (SkillProbeLogs.Add(probeKey))
+                {
+                    UnityEngine.Debug.LogWarning(
+                        "SkillProbe texture-update no-frame path=" + this.spr.path +
+                        " frame=" + this.spr.frameIndex);
+                }
                 this.appearance.spriteRendererComponent.sprite = null;
                 return;
             }

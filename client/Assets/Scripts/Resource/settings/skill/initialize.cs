@@ -59,8 +59,10 @@ namespace game.resource.settings.skill
 
             for(int rowIndex = 1; rowIndex < missileTable.RowCount; rowIndex++)
             {
+                result[rowIndex] = rowIndex;
+
                 int missileId = missileTable.Get<int>("MissleId", rowIndex);
-                if (missileId > 0)
+                if (missileId > 0 && result.ContainsKey(missileId) == false)
                 {
                     result[missileId] = rowIndex;
                 }

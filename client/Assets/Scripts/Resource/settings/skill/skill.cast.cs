@@ -135,9 +135,13 @@ namespace game.resource.settings.skill
                     }
                 }
 
-                resource.map.Position sourcePos = castParams.launcher.GetMapPosition();
-                resource.map.Position targetPos = castParams.target.GetMapPosition();
-                castParams.launcher.npc.SetDirection(skill.Static.Dir64To8(skill.Static.g_GetDirIndex(sourcePos.left, sourcePos.top, targetPos.left, targetPos.top)) + 1);
+                if (castParams.target != null && castParams.target.HaveData())
+                {
+                    resource.map.Position sourcePos = castParams.launcher.GetMapPosition();
+                    resource.map.Position targetPos = castParams.target.GetMapPosition();
+                    castParams.launcher.npc.SetDirection(skill.Static.Dir64To8(skill.Static.g_GetDirIndex(sourcePos.left, sourcePos.top, targetPos.left, targetPos.top)) + 1);
+                }
+
                 castParams.launcher.npc.Update();
             }
 

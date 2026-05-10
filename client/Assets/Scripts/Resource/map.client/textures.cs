@@ -326,6 +326,7 @@ namespace game.resource.map
         private readonly Dictionary<settings.skill.Missile, bool> missiles;
         private readonly List<MapTextureAnimation> mapTextureAnimations;
         private readonly HashSet<int> skippedSkillSpriteRenderLogs;
+        private readonly HashSet<string> skillSpriteProbeLogs;
         private int progressingMillisecondsInCycle;
 
         private readonly Dictionary<settings.objres.Controller, bool> objs;
@@ -344,6 +345,7 @@ namespace game.resource.map
             this.missiles = new Dictionary<settings.skill.Missile, bool>();
             this.mapTextureAnimations = new List<MapTextureAnimation>();
             this.skippedSkillSpriteRenderLogs = new HashSet<int>();
+            this.skillSpriteProbeLogs = new HashSet<string>();
             this.progressingMillisecondsInCycle = (int)((1.0f / 60) * 1000);
 
             this.objs = new Dictionary<settings.objres.Controller, bool>();
@@ -1281,6 +1283,24 @@ namespace game.resource.map
 
         private void Command_CastSkill(Textures.Command.CastSkill _command)
         {
+            string commandProbeKey = "command:" + _command.skillId + ":" + _command.skillLevel;
+            if (this.skillSpriteProbeLogs.Add(commandProbeKey))
+            {
+                settings.skill.Params.Owner launcher = _command.castParams != null ? _command.castParams.launcher : null;
+                settings.skill.Params.Owner target = _command.castParams != null ? _command.castParams.target : null;
+                map.Position launcherPosition = launcher != null ? launcher.GetMapPosition() : map.Position.Zero;
+                map.Position targetPosition = target != null ? target.GetMapPosition() : map.Position.Zero;
+                UnityEngine.Debug.Log(
+                    "SkillProbe command skill=" + _command.skillId +
+                    " level=" + _command.skillLevel +
+                    " launcherType=" + (launcher != null ? launcher.type.ToString() : "<null>") +
+                    " launcherPos=" + launcherPosition.left + "," + launcherPosition.top +
+                    " targetType=" + (target != null ? target.type.ToString() : "<null>") +
+                    " targetPos=" + targetPosition.left + "," + targetPosition.top +
+                    " nParam1=" + (_command.castParams != null ? _command.castParams.nParam1 : 0) +
+                    " nParam2=" + (_command.castParams != null ? _command.castParams.nParam2 : 0));
+            }
+
             if (!EnableLocalSkillSpriteRendering)
             {
                 int logKey = (_command.skillId << 8) ^ _command.skillLevel;
@@ -1304,17 +1324,37 @@ namespace game.resource.map
                 UnityEngine.Debug.LogWarning(
                     "Local skill SPR rendering failed. skill=" + _command.skillId +
                     " level=" + _command.skillLevel +
-                    " error=" + exception.GetBaseException().Message);
+                    " error=" + exception);
                 return;
             }
 
             if(missiles == null)
             {
+                UnityEngine.Debug.LogWarning(
+                    "SkillProbe cast returned null skill=" + _command.skillId +
+                    " level=" + _command.skillLevel);
                 return;
             }
 
+            UnityEngine.Debug.Log(
+                "SkillProbe cast missiles skill=" + _command.skillId +
+                " level=" + _command.skillLevel +
+                " count=" + missiles.Count);
+
             foreach (settings.skill.Missile missileIndex in missiles)
             {
+                string missileProbeKey = "missile:" + _command.skillId + ":" + _command.skillLevel + ":" + missileIndex.GetSprPath();
+                if (this.skillSpriteProbeLogs.Add(missileProbeKey))
+                {
+                    map.Position missilePosition = missileIndex.GetMapPosition();
+                    UnityEngine.Debug.Log(
+                        "SkillProbe queue missile skill=" + _command.skillId +
+                        " level=" + _command.skillLevel +
+                        " spr=" + missileIndex.GetSprPath() +
+                        " frame=" + missileIndex.GetSprFrame() +
+                        " pos=" + missilePosition.left + "," + missilePosition.top);
+                }
+
                 this.missiles[missileIndex] = true;
 
                 missileIndex.Initialize();

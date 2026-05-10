@@ -44,6 +44,8 @@ public class MainCanvas : MonoBehaviour
         ButtonCommonGuild = ButtonCommonGroup.transform.Find("ButtonCommonGuild").gameObject;
         ButtonCommonSkill = ButtonCommonGroup.transform.Find("ButtonCommonSkill").gameObject;
         ButtonCommonSettting = ButtonCommonGroup.transform.Find("ButtonCommonSettting").gameObject;
+        Transform commonSwitch = gameObject.transform.Find("ButtonCommonGroup1");
+        ButtonCommonSwitch = commonSwitch != null ? commonSwitch.gameObject : null;
         MiniChat = gameObject.transform.Find("Chat").gameObject;
 
         TopBar = PanelSafeArea.transform.Find("TopBar").gameObject;

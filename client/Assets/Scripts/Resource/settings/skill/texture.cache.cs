@@ -6,6 +6,7 @@ namespace game.resource.settings.skill.texture
     public class SprCache
     {
         private static readonly HashSet<string> missingSprLogs = new HashSet<string>();
+        private static readonly HashSet<string> frameFailureLogs = new HashSet<string>();
 
         public class Data
         {
@@ -39,6 +40,14 @@ namespace game.resource.settings.skill.texture
 
             if(sprInfo == null || sprInfo.frameCount <= frameIndex)
             {
+                string frameKey = sprPath + "#" + frameIndex + ":range";
+                if (frameFailureLogs.Add(frameKey))
+                {
+                    UnityEngine.Debug.LogWarning(
+                        "SkillProbe spr-frame unavailable path=" + sprPath +
+                        " frame=" + frameIndex +
+                        " frameCount=" + (sprInfo != null ? sprInfo.frameCount : 0));
+                }
                 return null;
             }
 
@@ -47,6 +56,13 @@ namespace game.resource.settings.skill.texture
             if(frameInfo == null
                 || frameInfo.width == 0)
             {
+                string frameKey = sprPath + "#" + frameIndex + ":info";
+                if (frameFailureLogs.Add(frameKey))
+                {
+                    UnityEngine.Debug.LogWarning(
+                        "SkillProbe spr-frame-info missing path=" + sprPath +
+                        " frame=" + frameIndex);
+                }
                 return null;
             }
 
@@ -54,6 +70,14 @@ namespace game.resource.settings.skill.texture
 
             if(sprite == null)
             {
+                string frameKey = sprPath + "#" + frameIndex + ":sprite";
+                if (frameFailureLogs.Add(frameKey))
+                {
+                    UnityEngine.Debug.LogWarning(
+                        "SkillProbe spr-frame-sprite missing path=" + sprPath +
+                        " frame=" + frameIndex +
+                        " size=" + frameInfo.width + "x" + frameInfo.height);
+                }
                 return null;
             }
 
@@ -77,6 +101,7 @@ namespace game.resource.settings.skill.texture
             }
 
             storage[sprPath].sprFrame[frameIndex] = sprFrame;
+
             return sprFrame;
         }
 
@@ -95,12 +120,13 @@ namespace game.resource.settings.skill.texture
             {
                 if (missingSprLogs.Add(sprPath))
                 {
-                    UnityEngine.Debug.LogWarning("Skill SPR missing: " + sprPath);
+                    UnityEngine.Debug.LogWarning("SkillProbe spr-info missing path=" + sprPath);
                 }
                 return null;
             }
 
             storage[sprPath] = newSpr;
+
             return newSpr.sprInfo;
         }
 

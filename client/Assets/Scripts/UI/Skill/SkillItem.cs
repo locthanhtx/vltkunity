@@ -51,7 +51,7 @@ public class SkillItem : MonoBehaviour
         }
 
         this.skill = skill;
-        SkillSetting skillSetting = SkillIconLoader.TryGetSetting(skill.id, skill.level);
+        SkillSetting skillSetting = SkillIconLoader.TryGetBaseSetting(skill.id);
         if (nameSkill != null)
         {
             nameSkill.text = SkillIconLoader.DisplayName(skillSetting, skill.id);
@@ -99,12 +99,42 @@ internal static class SkillIconLoader
     private const string SkillIconPath = "SkillIcon/";
     private const string FallbackIconPath = "WorldGameUI/Buttons/btn_fight";
     private const string DefaultSkillSprPath = "\\spr\\Ui\\技能图标\\枪法.spr";
+    private static readonly System.Collections.Generic.Dictionary<int, SkillSetting> BaseSettingCache = new();
+    private static readonly System.Collections.Generic.Dictionary<string, Sprite> SprIconCache = new();
+    private static readonly System.Collections.Generic.Dictionary<int, Sprite> ResourceIconCache = new();
     private static readonly System.Collections.Generic.HashSet<string> MissingSprIconLogs = new();
+    private static readonly System.Collections.Generic.HashSet<int> MissingSkillNameLogs = new();
 
     public static Sprite LoadIcon(int skillId)
     {
-        SkillSetting skillSetting = TryGetSetting(skillId, 1);
+        SkillSetting skillSetting = TryGetBaseSetting(skillId);
         return LoadIcon(skillSetting, skillId);
+    }
+
+    public static SkillSetting TryGetBaseSetting(int skillId)
+    {
+        if (skillId <= 0)
+        {
+            return null;
+        }
+
+        if (BaseSettingCache.TryGetValue(skillId, out SkillSetting cachedSetting))
+        {
+            return cachedSetting;
+        }
+
+        try
+        {
+            SkillSetting skillSetting = SkillSetting.GetBase(skillId);
+            BaseSettingCache[skillId] = skillSetting;
+            return skillSetting;
+        }
+        catch (System.Exception exception)
+        {
+            Debug.LogWarning("Skill base setting failed for skillId=" + skillId + ": " + exception.GetBaseException().Message);
+            BaseSettingCache[skillId] = null;
+            return null;
+        }
     }
 
     public static SkillSetting TryGetSetting(int skillId, int skillLevel)
@@ -136,7 +166,15 @@ internal static class SkillIconLoader
 
         if (sprite == null && skillId > 0)
         {
-            sprite = Resources.Load<Sprite>(SkillIconPath + skillId);
+            if (ResourceIconCache.TryGetValue(skillId, out Sprite cachedResourceIcon))
+            {
+                sprite = cachedResourceIcon;
+            }
+            else
+            {
+                sprite = Resources.Load<Sprite>(SkillIconPath + skillId);
+                ResourceIconCache[skillId] = sprite;
+            }
         }
 
         if (sprite == null)
@@ -156,7 +194,13 @@ internal static class SkillIconLoader
 
         try
         {
+            if (SprIconCache.TryGetValue(sprPath, out Sprite cachedSprite))
+            {
+                return cachedSprite;
+            }
+
             Sprite sprite = Game.Resource(sprPath).Get<Sprite>(game.resource.SPR.firstFrame);
+            SprIconCache[sprPath] = sprite;
             if (sprite == null && MissingSprIconLogs.Add(sprPath))
             {
                 Debug.LogWarning("Skill icon SPR missing: " + sprPath);
@@ -184,7 +228,60 @@ internal static class SkillIconLoader
 
     public static string DisplayName(SkillSetting skillSetting, int skillId)
     {
-        return HasValidSetting(skillSetting, skillId) ? skillSetting.m_szName : "Skill " + skillId;
+        string skillName = HasValidSetting(skillSetting, skillId)
+            ? skillSetting.m_szName
+            : LoadNameFromSkillTable(skillId);
+
+        if (string.IsNullOrEmpty(skillName))
+        {
+            return "Skill " + skillId;
+        }
+
+        return skillName + " (" + skillId + ")";
+    }
+
+    private static string LoadNameFromSkillTable(int skillId)
+    {
+        if (skillId <= 0)
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            game.resource.Table skillsTable = game.resource.Cache.Settings.Skill.skillsTable;
+            System.Collections.Generic.Dictionary<int, int> rowMapping =
+                game.resource.Cache.Settings.Skill.skillsIdToRowIndexMapping;
+
+            if (skillsTable == null || rowMapping == null || rowMapping.TryGetValue(skillId, out int rowIndex) == false)
+            {
+                if (MissingSkillNameLogs.Add(skillId))
+                {
+                    Debug.LogWarning("Skill name missing from Skill.txt: skillId=" + skillId);
+                }
+
+                return string.Empty;
+            }
+
+            string skillName = skillsTable.Get<string>("SkillName", rowIndex);
+            if (string.IsNullOrEmpty(skillName))
+            {
+                return string.Empty;
+            }
+
+            return skillsTable.GetEncoding().byteOrderMarks == 0
+                ? game.resource.formater.TCVN3.UTF8(skillName)
+                : skillName;
+        }
+        catch (System.Exception exception)
+        {
+            if (MissingSkillNameLogs.Add(skillId))
+            {
+                Debug.LogWarning("Skill name load failed for skillId=" + skillId + ": " + exception.GetBaseException().Message);
+            }
+
+            return string.Empty;
+        }
     }
 
     public static string LevelText(SkillSetting skillSetting, int skillId, int level)

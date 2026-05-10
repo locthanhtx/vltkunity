@@ -25,35 +25,41 @@ namespace game.resource.settings.skill
             }
 
             resource.Script script = new resource.Script(scriptPath);
-            //string debugInfo = string.Empty;
-            //UnityEngine.Debug.Log("--------------------------------");
-
-            for (int i = 0; i < skill.Defination.MAX_SKILLVEDATA_COUNT; ++i)
+            try
             {
-                string szSettingName = "LvlSetting" + (i + 1);
-                string szSettingData = "LvlData" + (i + 1);
+                //string debugInfo = string.Empty;
+                //UnityEngine.Debug.Log("--------------------------------");
 
-                string szSettingNameValue = Cache.Settings.Skill.skillsTable.Get<string>(szSettingName, rowIndex);
-                string szSettingDataValue = Cache.Settings.Skill.skillsTable.Get<string>(szSettingData, rowIndex);
-
-                if (szSettingNameValue == null || szSettingNameValue == string.Empty)
+                for (int i = 0; i < skill.Defination.MAX_SKILLVEDATA_COUNT; ++i)
                 {
-                    continue;
+                    string szSettingName = "LvlSetting" + (i + 1);
+                    string szSettingData = "LvlData" + (i + 1);
+
+                    string szSettingNameValue = Cache.Settings.Skill.skillsTable.Get<string>(szSettingName, rowIndex);
+                    string szSettingDataValue = Cache.Settings.Skill.skillsTable.Get<string>(szSettingData, rowIndex);
+
+                    if (szSettingNameValue == null || szSettingNameValue == string.Empty)
+                    {
+                        continue;
+                    }
+
+                    //debugInfo += "|";
+                    //debugInfo += szSettingNameValue;
+
+                    string szResult = script.CallFunction<string>("GetSkillLevelData", szSettingNameValue, szSettingDataValue, level);
+
+                    if (szResult != null && szResult != string.Empty)
+                    {
+                        this.ParseString2MagicAttrib(level, szSettingNameValue, szResult);
+                    }
                 }
 
-                //debugInfo += "|";
-                //debugInfo += szSettingNameValue;
-
-                string szResult = script.CallFunction<string>("GetSkillLevelData", szSettingNameValue, szSettingDataValue, level);
-
-                if (szResult != null && szResult != string.Empty)
-                {
-                    this.ParseString2MagicAttrib(level, szSettingNameValue, szResult);
-                }
+                //UnityEngine.Debug.Log("skill: " + this.m_nId + ", debugInfo: " + debugInfo);
             }
-
-            //UnityEngine.Debug.Log("skill: " + this.m_nId + ", debugInfo: " + debugInfo);
-            script.Release();
+            finally
+            {
+                script.Release();
+            }
         }
 
         private int MAKELONG(int a, int b)

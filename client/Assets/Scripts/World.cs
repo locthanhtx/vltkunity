@@ -166,6 +166,26 @@ namespace game.scene
             this.map.CastSkill(id, level, castParams);
         }
 
+        public void CastSkill(int id, int level, resource.settings.npcres.Controller launcher, resource.settings.npcres.Controller target)
+        {
+            if (this.map == null || launcher == null || target == null)
+            {
+                return;
+            }
+
+            this.map.CastSkill(id, level, launcher, target);
+        }
+
+        public void CastSkill(int id, int level, resource.settings.npcres.Controller launcher, resource.map.Position target)
+        {
+            if (this.map == null || launcher == null || target == null)
+            {
+                return;
+            }
+
+            this.map.CastSkill(id, level, launcher, target);
+        }
+
         ////////////////////////////////////////////////////////////////////////////////
 
         public void SetCameraSize(float size)

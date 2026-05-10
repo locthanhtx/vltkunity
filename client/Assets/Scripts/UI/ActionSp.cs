@@ -13,25 +13,47 @@ public class ActionSp : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        ButtonSwitchHorse = gameObject.transform.Find("BtnSwitchHorse").gameObject;
-        ButtonRun = gameObject.transform.Find("ButtonRun").gameObject;
+        ButtonSwitchHorse = FindChildGameObject("BtnSwitchHorse");
+        ButtonRun = FindChildGameObject("ButtonRun");
 
-        ButtonSit.GetComponent<Button>().onClick.AddListener(() =>
+        Button sitButton = ButtonSit != null ? ButtonSit.GetComponent<Button>() : null;
+        if (sitButton != null)
         {
-            if (PlayerMain.instance != null) PlayerMain.instance.PlayerSit();
-        });
+            sitButton.onClick.AddListener(() =>
+            {
+                if (PlayerMain.instance != null) PlayerMain.instance.PlayerSit();
+            });
+        }
 
-        ButtonSwitchHorse.GetComponent<Button>().onClick.AddListener(() =>
+        Button switchHorseButton = ButtonSwitchHorse != null ? ButtonSwitchHorse.GetComponent<Button>() : null;
+        if (switchHorseButton != null)
         {
-            SwithHorse();
-        });
+            switchHorseButton.onClick.AddListener(() =>
+            {
+                SwithHorse();
+            });
+        }
+        else
+        {
+            Debug.LogWarning("ActionSp missing BtnSwitchHorse button.");
+        }
 
-        ButtonRun.GetComponent<Button>().onClick.AddListener(() =>
+        Button runButton = ButtonRun != null ? ButtonRun.GetComponent<Button>() : null;
+        if (runButton != null)
         {
-            if (PlayerMain.instance != null) PlayerMain.instance.PlayerRun();
-        });
+            runButton.onClick.AddListener(() =>
+            {
+                if (PlayerMain.instance != null) PlayerMain.instance.PlayerRun();
+            });
+        }
 
         InvokeRepeating(nameof(InitHorse), 1f, 1f);
+    }
+
+    private GameObject FindChildGameObject(string childName)
+    {
+        Transform child = transform.Find(childName);
+        return child != null ? child.gameObject : null;
     }
 
     /// <summary>

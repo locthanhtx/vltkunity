@@ -21,7 +21,9 @@ namespace game.resource.settings.skill
 
                     if (eLauncherType == Defination.eSkillLauncherType.SKILL_SLT_Npc)
                     {
-                        resource.map.Position position = castParams.launcher.GetMapPosition();
+                        resource.map.Position position = castParams.target != null && castParams.target.HaveData()
+                            ? castParams.target.GetMapPosition()
+                            : castParams.launcher.GetMapPosition();
                         npPX = position.left;
                         npPY = position.top;
                     }
@@ -771,6 +773,14 @@ namespace game.resource.settings.skill
 
             if (castParams.launcher.HaveData() == false)
             {
+                return result;
+            }
+
+            if (this.skillSetting.m_bBaseSkill != 0 && this.HasValidMissileSetting() == false)
+            {
+                UnityEngine.Debug.LogWarning(
+                    "Skill missile data missing. skill=" + this.skillSetting.m_nId +
+                    " childMissile=" + this.skillSetting.m_nChildSkillId);
                 return result;
             }
 

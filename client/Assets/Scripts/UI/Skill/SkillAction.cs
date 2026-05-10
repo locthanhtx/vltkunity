@@ -30,6 +30,7 @@ public class SkillAction : MonoBehaviour
     private bool isSkillPannel2 = false;
     private string ImagePath = "WorldGameUI/Buttons/btn_fight";
     private const int ClassicTargetSelfParamX = -1;
+    private const float ClassicForwardCastDistanceMps = 160f;
 
     void Start()
     {
@@ -89,7 +90,7 @@ public class SkillAction : MonoBehaviour
             {
                 if (skillUI.image != null)
                 {
-                    SkillSetting skillSetting = SkillIconLoader.TryGetSetting(skillData.id, skillData.level);
+                    SkillSetting skillSetting = SkillIconLoader.TryGetBaseSetting(skillData.id);
                     skillUI.image.sprite = SkillIconLoader.LoadIcon(skillSetting, skillData.id);
                 }
             }
@@ -106,54 +107,85 @@ public class SkillAction : MonoBehaviour
 
     public void CastSkill(int skillLocationCast)
     {
-        if (playerSkills == null)
+        if (!TryResolveHotKeySkill(skillLocationCast, out PlayerSkill skill, out int targetSkillId))
         {
-            UpdateSkill();
+            Debug.LogWarning("PanelHotKeys CastSkill skipped. slot=" + skillLocationCast +
+                             " storedSkillId=" + targetSkillId);
+            return;
         }
 
-        string locationSkill = PlayerPrefsKey.USER_SKILL_LOCATION + skillLocationCast;
-        int targetSkillId = PlayerPrefs.GetInt(locationSkill, -1);
+        SkillSetting skillSetting = SkillIconLoader.TryGetBaseSetting(skill.id);
+        int targetId = npcManager != null ? npcManager.GetTargetID() : -1;
 
-        if (targetSkillId > -1 && playerSkills != null && playerSkills.TryGetValue((ushort)targetSkillId, out PlayerSkill skill))
+        Dictionary<byte, object> opParameters = new()
         {
-            SkillSetting skillSetting = SkillIconLoader.TryGetSetting(skill.id, skill.level);
-            int targetId = npcManager != null ? npcManager.GetTargetID() : -1;
+            { (byte)ParamterCode.SkillId, skill.id},
+            { (byte)ParamterCode.SkillLevel, skill.level},
+        };
 
-            Dictionary<byte, object> opParameters = new()
-            {
-                { (byte)ParamterCode.SkillId, skill.id},
-                { (byte)ParamterCode.SkillLevel, skill.level},
-            };
+        string targetMode = "forward";
+        bool needsTargetOnly = SkillNeedsTargetOnly(skillSetting);
+        bool canUseTarget = SkillCanUseTarget(skillSetting);
 
-            bool shouldUseTarget = SkillShouldUseTarget(skillSetting);
-
-            if (targetId > -1 && shouldUseTarget)
+        if (SkillTargetsSelf(skillSetting))
+        {
+            opParameters[(byte)ParamterCode.MapX] = ClassicTargetSelfParamX;
+            opParameters[(byte)ParamterCode.MapY] = PhotonManager.Instance.PlayerId;
+            targetMode = "self";
+        }
+        else if (targetId > -1 && canUseTarget)
+        {
+            opParameters[(byte)ParamterCode.Id] = targetId;
+            opParameters[(byte)ParamterCode.NpcType] = targetId;
+            targetMode = "target";
+        }
+        else
+        {
+            if (needsTargetOnly)
             {
-                opParameters[(byte)ParamterCode.Id] = targetId;
-                opParameters[(byte)ParamterCode.NpcType] = targetId;
-            }
-            else if (shouldUseTarget)
-            {
+                Debug.LogWarning("PanelHotKeys CastSkill needs target. slot=" + skillLocationCast +
+                                 " skillId=" + skill.id +
+                                 " storedSkillId=" + targetSkillId);
                 return;
             }
-            else if (SkillTargetsSelf(skillSetting))
-            {
-                opParameters[(byte)ParamterCode.MapX] = ClassicTargetSelfParamX;
-                opParameters[(byte)ParamterCode.MapY] = PhotonManager.Instance.PlayerId;
-            }
-            else if (TryGetMainPlayerMps(out Vector2 mpsPosition))
+
+            if (TryGetMainPlayerMps(out Vector2 mpsPosition))
             {
                 Vector2 targetMps = GetForwardSkillTargetMps(mpsPosition);
                 opParameters[(byte)ParamterCode.MapX] = Mathf.RoundToInt(targetMps.x);
                 opParameters[(byte)ParamterCode.MapY] = Mathf.RoundToInt(targetMps.y);
             }
-
-            PhotonManager.Instance.TrySendOperation(OperationCode.NpcSkill, opParameters);
         }
 
+        Debug.Log("PanelHotKeys CastSkill slot=" + skillLocationCast +
+                  " storedSkillId=" + targetSkillId +
+                  " sendSkillId=" + skill.id +
+                  " level=" + skill.level +
+                  " targetMode=" + targetMode +
+                  " targetId=" + targetId);
+        PhotonManager.Instance.TrySendOperation(OperationCode.NpcSkill, opParameters);
     }
 
-    private static bool SkillShouldUseTarget(SkillSetting skillSetting)
+    private bool TryResolveHotKeySkill(int skillLocationCast, out PlayerSkill skill, out int targetSkillId)
+    {
+        UpdateSkill();
+
+        skill = null;
+        targetSkillId = -1;
+
+        if (skillLocationCast < 0 || SkillActives == null || skillLocationCast >= SkillActives.Count)
+        {
+            return false;
+        }
+
+        string locationSkill = PlayerPrefsKey.USER_SKILL_LOCATION + skillLocationCast;
+        targetSkillId = PlayerPrefs.GetInt(locationSkill, -1);
+        return targetSkillId > 0 &&
+            playerSkills != null &&
+            playerSkills.TryGetValue((ushort)targetSkillId, out skill);
+    }
+
+    private static bool SkillCanUseTarget(SkillSetting skillSetting)
     {
         if (skillSetting == null || skillSetting.m_nId <= 0)
         {
@@ -161,6 +193,11 @@ public class SkillAction : MonoBehaviour
         }
 
         return skillSetting.m_bTargetEnemy != 0 || skillSetting.m_bTargetOnly != 0;
+    }
+
+    private static bool SkillNeedsTargetOnly(SkillSetting skillSetting)
+    {
+        return skillSetting != null && skillSetting.m_bTargetOnly != 0;
     }
 
     private static bool SkillTargetsSelf(SkillSetting skillSetting)
@@ -196,7 +233,7 @@ public class SkillAction : MonoBehaviour
             direction = 0;
         }
 
-        return game.network.jx.JxClassicMovement.AdvanceMpsPosition(sourceMps, direction, 160f);
+        return game.network.jx.JxClassicMovement.AdvanceMpsPosition(sourceMps, direction, ClassicForwardCastDistanceMps);
     }
 
     public void FindNpcAround()

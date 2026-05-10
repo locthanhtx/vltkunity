@@ -23,7 +23,7 @@ namespace game.resource
 
         private void Initialize(string _literalData)
         {
-            this.rowLiteralVector = _literalData.Split("\r\n");
+            this.rowLiteralVector = _literalData.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
             this.rowTotal = this.rowLiteralVector.Length;
             this.rowKeyCacheValue = new();
             this.headerKeyIndex = new Dictionary<string, int>();

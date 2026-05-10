@@ -37,6 +37,7 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
     private bool classicLocalMovementActive;
     private float classicRunEchoIgnoreUntil;
     private float nextClassicSkillSendTime;
+    private readonly HashSet<string> classicSkillRenderWarnings = new();
 
     [SerializeField]
     private bool usePhotonServer = false;
@@ -1483,6 +1484,7 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         }
 
         ApplyClassicSkillAnimation(caster, sync.SkillId, sync.SkillLevel);
+        RenderClassicSkill(sync.SkillId, sync.SkillLevel, caster, sync.MpsX, sync.MpsY, "server");
     }
 
     private game.resource.settings.npcres.Controller FindClassicController(int id)
@@ -2108,6 +2110,69 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
 
         game.resource.settings.npcres.Controller launcher = world.GetMainPlayer();
         NpcAction.DoAction(launcher, NPCCMD.do_attack);
+        RenderClassicSkill(skillId, skillLevel, launcher, mpsX, mpsY, "preview");
+    }
+
+    private void RenderClassicSkill(
+        int skillId,
+        int skillLevel,
+        game.resource.settings.npcres.Controller launcher,
+        int mpsX,
+        int mpsY,
+        string source)
+    {
+        if (world == null || launcher == null || skillId <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            if (mpsX < 0 && mpsY > 0)
+            {
+                game.resource.settings.npcres.Controller target = FindClassicController(mpsY);
+                if (target != null)
+                {
+                    world.CastSkill(skillId, Math.Max(1, skillLevel), launcher, target);
+                    return;
+                }
+
+                LogClassicSkillRenderWarning(source + ":target:" + skillId + ":" + mpsY,
+                    "Classic skill render target missing. source=" + source +
+                    " skill=" + skillId +
+                    " targetId=" + mpsY);
+                return;
+            }
+
+            if (mpsX > 0 || mpsY > 0)
+            {
+                world.CastSkill(
+                    skillId,
+                    Math.Max(1, skillLevel),
+                    launcher,
+                    new game.resource.map.Position(mpsY / 2, mpsX));
+                return;
+            }
+
+            game.resource.map.Position launcherPosition = launcher.GetMapPosition();
+            world.CastSkill(skillId, Math.Max(1, skillLevel), launcher, launcherPosition);
+        }
+        catch (Exception exception)
+        {
+            LogClassicSkillRenderWarning(source + ":error:" + skillId,
+                "Classic skill render failed. source=" + source +
+                " skill=" + skillId +
+                " level=" + skillLevel +
+                " error=" + exception.GetBaseException().Message);
+        }
+    }
+
+    private void LogClassicSkillRenderWarning(string key, string message)
+    {
+        if (classicSkillRenderWarnings.Add(key))
+        {
+            Debug.LogWarning(message);
+        }
     }
 
     private static void FireAndForgetClassicSend(Task task)

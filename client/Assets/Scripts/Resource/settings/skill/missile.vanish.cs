@@ -13,6 +13,10 @@ namespace game.resource.settings.skill.missile
             }
 
             skill.MissileSetting.AnimateFile missileRes = this.missileSetting.GetAnimateFile(Defination.MissleStatus.MS_DoVanish);
+            if (missileRes == null && this.missileSetting.m_bCollideVanish != 0)
+            {
+                missileRes = this.missileSetting.GetAnimateFile(Defination.MissleStatus.MS_DoCollision);
+            }
 
             if(missileRes != null)
             {
