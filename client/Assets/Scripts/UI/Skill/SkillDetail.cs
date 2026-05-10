@@ -29,8 +29,6 @@ public class SkillDetail : MonoBehaviour
     private int location;
     private bool isSkillActive2;
 
-    private string ImageSkillPath = "SkillIcon/";
-
     private void Start()
     {
         btnCancel.GetComponent<Button>().onClick.AddListener(() => RemoveSkillActive());
@@ -74,25 +72,25 @@ public class SkillDetail : MonoBehaviour
 
     void InitSkillDetail()
     {
-        SkillSetting skillSetting = SkillSetting.Get(skill.id, skill.level);
-
-        nameSkill.text = skillSetting.m_szName;
-
-        levelSkill.text = skill.level + " / " + skillSetting.m_maxLevel;
-
-        Sprite sprite = Resources.Load<Sprite>(ImageSkillPath + skill.id);
-
-        if (sprite == null)
+        if (skill == null)
         {
-            sprite = Game.Resource(skillSetting.m_szSkillIcon).Get<UnityEngine.Sprite>(0);
-            nameSkill.text = skillSetting.m_szName;
+            nameSkill.text = string.Empty;
+            levelSkill.text = string.Empty;
+            skillDetail.text = string.Empty;
+            SkillIcon.sprite = SkillIconLoader.LoadIcon(0);
+            return;
         }
 
-        SkillIcon.sprite = sprite;
+        SkillSetting skillSetting = SkillSetting.Get(skill.id, skill.level);
+
+        nameSkill.text = SkillIconLoader.DisplayName(skillSetting, skill.id);
+
+        levelSkill.text = SkillIconLoader.LevelText(skillSetting, skill.id, skill.level);
+
+        SkillIcon.sprite = SkillIconLoader.LoadIcon(skill.id);
 
         // Skill detail
-        string text = skillSetting.m_property + "\n" + skillSetting.m_szSkillDesc + "\n" + skillSetting.GetDescription();
-        skillDetail.text = text;
+        skillDetail.text = SkillIconLoader.Description(skillSetting, skill.id);
     }
 
     public void UseSkill(int location)

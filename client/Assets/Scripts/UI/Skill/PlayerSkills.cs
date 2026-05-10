@@ -40,6 +40,10 @@ public class PlayerSkills : MonoBehaviour
         playerSkills = PlayerMain.instance != null
             ? PlayerMain.instance.playerSkills()
             : new Dictionary<ushort, PlayerSkill>();
+        if (playerSkills == null)
+        {
+            playerSkills = new Dictionary<ushort, PlayerSkill>();
+        }
 
         ResetSkillList();
         SetUpSkillActive();
@@ -61,6 +65,11 @@ public class PlayerSkills : MonoBehaviour
 
     public void AddSkillToActive(PlayerSkill skill, int location)
     {
+        if (skill == null || location < 0 || location >= SkillActives.Count)
+        {
+            return;
+        }
+
         string locationSkill = PlayerPrefsKey.USER_SKILL_LOCATION + location;
         PlayerPrefs.SetInt(locationSkill, skill.id);
         SetUpSkillActive();
@@ -69,6 +78,11 @@ public class PlayerSkills : MonoBehaviour
 
     public void RemoveSkill(int location)
     {
+        if (location < 0 || location >= SkillActives.Count)
+        {
+            return;
+        }
+
         SkillItem skillItem = SkillActives[location].GetComponent<SkillItem>();
         skillItem.RemoveSkillData();
 
@@ -90,11 +104,21 @@ public class PlayerSkills : MonoBehaviour
                 SkillItem skillItem = SkillActives[i].GetComponent<SkillItem>();
                 skillItem.SetUpSkillSetting(skill);
             }
+            else
+            {
+                SkillItem skillItem = SkillActives[i].GetComponent<SkillItem>();
+                skillItem.RemoveSkillData();
+            }
         }
     }
 
     void SetUpSkillList(Dictionary<ushort, PlayerSkill> playerSkills)
     {
+        if (Skills == null || childPrefab == null || playerSkills == null)
+        {
+            return;
+        }
+
         VerticalLayoutGroup verticalLayout = Skills.GetComponent<VerticalLayoutGroup>();
 
         foreach (KeyValuePair<ushort, PlayerSkill> pair in playerSkills)
@@ -120,6 +144,22 @@ public class PlayerSkills : MonoBehaviour
 
     public void OpenSkillDetail(PlayerSkill skill)
     {
+        if (skill == null)
+        {
+            return;
+        }
+
+        if (playerSkills == null)
+        {
+            playerSkills = PlayerMain.instance != null
+                ? PlayerMain.instance.playerSkills()
+                : new Dictionary<ushort, PlayerSkill>();
+            if (playerSkills == null)
+            {
+                playerSkills = new Dictionary<ushort, PlayerSkill>();
+            }
+        }
+
         int location = -1;
 
         for (int i = 0; i < SkillActives.Count; i++)

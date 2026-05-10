@@ -56,13 +56,13 @@ namespace game.resource.map
 
             private void DrawPixel(int x, int y)
             {
-                int pixelIndex = this.pixelBuffer.Length - Math.Abs(y * textureSize + x);
-
-                if (pixelIndex >= this.pixelBuffer.Length)
+                int pixelY = -y;
+                if (x < 0 || x >= textureSize || pixelY < 0 || pixelY >= textureSize)
                 {
                     return;
                 }
 
+                int pixelIndex = ((textureSize - 1 - pixelY) * textureSize) + x;
                 this.pixelBuffer[pixelIndex] = this.pixelColor;
             }
 

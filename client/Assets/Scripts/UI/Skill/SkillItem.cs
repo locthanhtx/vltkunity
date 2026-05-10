@@ -21,7 +21,6 @@ public class SkillItem : MonoBehaviour
 
     private PlayerSkill skill;
     private string ImagePath = "WorldGameUI/Buttons/btn_fight";
-    private string ImageSkillPath = "SkillIcon/";
 
     private void Start()
     {
@@ -32,18 +31,17 @@ public class SkillItem : MonoBehaviour
 
     public void SetUpSkillSetting(PlayerSkill skill)
     {
+        if (skill == null)
+        {
+            RemoveSkillData();
+            return;
+        }
 
         this.skill = skill;
         SkillSetting skillSetting = SkillSetting.Get(skill.id, skill.level);
-        nameSkill.text = skillSetting.m_szName;
-        levelSkill.text = skill.level + " / " + skillSetting.m_maxLevel;
-        Sprite sprite = Resources.Load<Sprite>(ImageSkillPath + skill.id);
-        if (sprite == null)
-        {
-            sprite = Game.Resource(skillSetting.m_szSkillIcon).Get<UnityEngine.Sprite>(0);
-            nameSkill.text = skillSetting.m_szName;
-        }
-        SkillIcon.sprite = sprite;
+        nameSkill.text = SkillIconLoader.DisplayName(skillSetting, skill.id);
+        levelSkill.text = SkillIconLoader.LevelText(skillSetting, skill.id, skill.level);
+        SkillIcon.sprite = SkillIconLoader.LoadIcon(skill.id);
     }
 
     public void RemoveSkillData()
@@ -53,5 +51,86 @@ public class SkillItem : MonoBehaviour
         levelSkill.text = "";
         Sprite loadedImage = Resources.Load<Sprite>(ImagePath);
         image.sprite = loadedImage;
+    }
+}
+
+internal static class SkillIconLoader
+{
+    private const string SkillIconPath = "SkillIcon/";
+    private const string FallbackIconPath = "WorldGameUI/Buttons/btn_fight";
+
+    public static Sprite LoadIcon(int skillId)
+    {
+        Sprite sprite = null;
+
+        if (skillId > 0)
+        {
+            sprite = Resources.Load<Sprite>(SkillIconPath + skillId);
+        }
+
+        return sprite != null ? sprite : Resources.Load<Sprite>(FallbackIconPath);
+    }
+
+    public static bool HasValidSetting(SkillSetting skillSetting, int skillId)
+    {
+        return skillSetting != null
+            && skillSetting.m_nId == skillId
+            && string.IsNullOrEmpty(skillSetting.m_szName) == false;
+    }
+
+    public static string DisplayName(SkillSetting skillSetting, int skillId)
+    {
+        return HasValidSetting(skillSetting, skillId) ? skillSetting.m_szName : "Skill " + skillId;
+    }
+
+    public static string LevelText(SkillSetting skillSetting, int skillId, int level)
+    {
+        int maxLevel = HasValidSetting(skillSetting, skillId) ? skillSetting.m_maxLevel : 0;
+        return level + " / " + maxLevel;
+    }
+
+    public static string Description(SkillSetting skillSetting, int skillId)
+    {
+        if (HasValidSetting(skillSetting, skillId) == false)
+        {
+            return string.Empty;
+        }
+
+        string text = string.Empty;
+
+        if (string.IsNullOrEmpty(skillSetting.m_property) == false)
+        {
+            text += skillSetting.m_property;
+        }
+
+        if (string.IsNullOrEmpty(skillSetting.m_szSkillDesc) == false)
+        {
+            if (text.Length > 0)
+            {
+                text += "\n";
+            }
+
+            text += skillSetting.m_szSkillDesc;
+        }
+
+        try
+        {
+            string description = skillSetting.GetDescription();
+            if (string.IsNullOrEmpty(description) == false)
+            {
+                if (text.Length > 0)
+                {
+                    text += "\n";
+                }
+
+                text += description;
+            }
+        }
+        catch (System.Exception exception)
+        {
+            Debug.LogWarning("Skill description failed for skillId=" + skillId + ": " + exception.Message);
+        }
+
+        return text;
     }
 }

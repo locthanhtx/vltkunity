@@ -29,21 +29,45 @@ public class SkillAction : MonoBehaviour
     private Dictionary<ushort, PlayerSkill> playerSkills;
     private bool isSkillPannel2 = false;
     private string ImagePath = "WorldGameUI/Buttons/btn_fight";
-    private string ImageSkillPath = "SkillIcon/";
 
     void Start()
     {
-        wordlGame = mainGameObject.GetComponent<World>();
-        charManager = mainGameObject.GetComponent<CharManager>();
-        npcManager = mainGameObject.GetComponent<NpcManager>();
+        if (mainGameObject == null)
+        {
+            World world = UnityEngine.Object.FindFirstObjectByType<World>();
+            if (world != null)
+            {
+                mainGameObject = world.gameObject;
+            }
+        }
 
-        ButtonTargetNPC.onClick.AddListener(() => FindNpcAround());
-        ButtonSwitch.onClick.AddListener(() => Swtich());
+        if (mainGameObject != null)
+        {
+            wordlGame = mainGameObject.GetComponent<World>();
+            charManager = mainGameObject.GetComponent<CharManager>();
+            npcManager = mainGameObject.GetComponent<NpcManager>();
+        }
+
+        if (ButtonTargetNPC != null)
+        {
+            ButtonTargetNPC.onClick.AddListener(() => FindNpcAround());
+        }
+
+        if (ButtonSwitch != null)
+        {
+            ButtonSwitch.onClick.AddListener(() => Swtich());
+        }
     }
 
     public void UpdateSkill()
     {
-        playerSkills = PlayerMain.instance.playerSkills();
+        playerSkills = PlayerMain.instance != null
+            ? PlayerMain.instance.playerSkills()
+            : new Dictionary<ushort, PlayerSkill>();
+        if (playerSkills == null)
+        {
+            playerSkills = new Dictionary<ushort, PlayerSkill>();
+        }
 
         for (int i = 0; i < SkillActives.Count; i++)
         {
@@ -53,14 +77,7 @@ public class SkillAction : MonoBehaviour
 
             if (targetSkillId > -1 && playerSkills.TryGetValue((ushort)targetSkillId, out PlayerSkill skillData))
             {
-                SkillSetting skillSetting = SkillSetting.Get(skillData.id, skillData.level);
-
-                Sprite sprite = Resources.Load<Sprite>(ImageSkillPath + skillData.id);
-                if (sprite == null)
-                {
-                    sprite = Game.Resource(skillSetting.m_szSkillIcon).Get<UnityEngine.Sprite>(0);
-                }
-                skillUI.image.sprite = sprite;
+                skillUI.image.sprite = SkillIconLoader.LoadIcon(skillData.id);
             }
             else
             {
@@ -72,12 +89,17 @@ public class SkillAction : MonoBehaviour
 
     public void CastSkill(int skillLocationCast)
     {
+        if (playerSkills == null)
+        {
+            UpdateSkill();
+        }
+
         string locationSkill = PlayerPrefsKey.USER_SKILL_LOCATION + skillLocationCast;
         int targetSkillId = PlayerPrefs.GetInt(locationSkill, -1);
 
-        if (targetSkillId > -1 && playerSkills.TryGetValue((ushort)targetSkillId, out PlayerSkill skill))
+        if (targetSkillId > -1 && playerSkills != null && playerSkills.TryGetValue((ushort)targetSkillId, out PlayerSkill skill))
         {
-            if (npcManager.GetTargetID() == -1)
+            if (npcManager == null || npcManager.GetTargetID() == -1)
             {
                 return;
             }
@@ -96,13 +118,23 @@ public class SkillAction : MonoBehaviour
 
     public void FindNpcAround()
     {
-        npcManager.ChangeEmmy();
+        if (npcManager != null)
+        {
+            npcManager.ChangeEmmy();
+        }
     }
 
     public void Swtich()
     {
         isSkillPannel2 = !isSkillPannel2;
-        SkillPannel1.SetActive(!isSkillPannel2);
-        SkillPannel2.SetActive(isSkillPannel2);
+        if (SkillPannel1 != null)
+        {
+            SkillPannel1.SetActive(!isSkillPannel2);
+        }
+
+        if (SkillPannel2 != null)
+        {
+            SkillPannel2.SetActive(isSkillPannel2);
+        }
     }
 }
