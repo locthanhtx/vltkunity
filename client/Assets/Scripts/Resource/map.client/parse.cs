@@ -12,6 +12,15 @@ namespace game.resource.map
             map.Config.Textures _mapConfig
         )
         {
+            if (resource.Cache.resourcePackageHandler == IntPtr.Zero)
+            {
+                return new map.Element
+                {
+                    texture = Array.Empty<map.Element.Texture>(),
+                    obstacle = Array.Empty<map.Element.Obstacle>()
+                };
+            }
+
             int textureCount = 0;
             int obstacleCount = 0;
             int sizeOfNodeStruct = Marshal.SizeOf(typeof(map.Position.Sequential.Node));

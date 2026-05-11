@@ -226,10 +226,11 @@ public class LoginManger : BaseMonoBehaviour
         {
             HideLoading();
             isClassicLoginRunning = false;
+            Exception rootException = exception.GetBaseException();
             Debug.LogError(exception);
             pannelPlay.SetActive(false);
             panelUI.SetActive(true);
-            ShowMessageBox("Không kết nối được server JX classic: " + exception.Message, "error");
+            ShowMessageBox("Không kết nối được server JX classic: " + rootException.Message, "error");
         }
     }
 

@@ -14,13 +14,13 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/Character.unity
     guid: 1307f3cd8003e4d818e0dafd454cb2c6
-  - enabled: 1
+  - enabled: 0
     path: Assets/Scenes/Examples/map.sprite.renderer.origin/ExampleMapSpriteRendererScene.unity
     guid: 5a1b855a4c386784e81322cd5ba62506
   - enabled: 1
     path: Assets/Scenes/GameWorld.unity
     guid: 9935b5f4f19dfb448848c9b73fddd424
-  - enabled: 1
+  - enabled: 0
     path: Assets/Scenes/Game.World.Design/GameWorldDesignScene.unity
     guid: 17ba81a1c1bd46a42960329a930bdcda
   m_configObjects:
@@ -28,3 +28,4 @@ EditorBuildSettings:
     com.unity.adaptiveperformance.simulator.provider_settings: {fileID: 11400000, guid: f6e826ee74c8547129d49ee858a5cb26, type: 2}
     com.unity.addressableassets: {fileID: 11400000, guid: aded022831699414aa64de0c0b951b76, type: 2}
     com.unity.localization.settings: {fileID: 11400000, guid: 010e909ab0f214e27b1830f7c81203ab, type: 2}
+  m_UseUCBPForAssetBundles: 0

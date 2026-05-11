@@ -30,7 +30,6 @@ class Game
         stopwatch.Stop();
         UnityEngine.Debug.Log("game.resource.settings.<...>.Initialize --> performance: " + stopwatch.ElapsedMilliseconds + " milliseconds");
 #else
-        game.Style.Initialize();
         if (!game.resource.PackageIni.Initialize())
         {
             UnityEngine.Debug.LogError("game.resource.PackageIni.Initialize failed.");

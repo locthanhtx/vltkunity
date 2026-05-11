@@ -324,16 +324,16 @@ namespace game.resource.map
                 return System.IO.File.ReadAllBytes(localPath);
             }
 
-            resource.Buffer nativeBuffer = ReadNativeResourceBuffer(regionPath);
-            if (nativeBuffer.size > 0)
-            {
-                return nativeBuffer;
-            }
-
             if (resource.packageIni.ManagedPakReader.TryRead(regionPath, out resource.Buffer buffer)
                 && buffer.size > 0)
             {
                 return buffer;
+            }
+
+            resource.Buffer nativeBuffer = ReadNativeResourceBuffer(regionPath);
+            if (nativeBuffer.size > 0)
+            {
+                return nativeBuffer;
             }
 
             return new resource.Buffer();

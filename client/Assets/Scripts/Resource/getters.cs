@@ -105,6 +105,16 @@ namespace game
         {
             resource.packageIni.ElementReference result = new();
 
+            if (resource.packageIni.ManagedPakReader.TryGetElementReference(this.path, out result))
+            {
+                return result;
+            }
+
+            if (resource.Cache.resourcePackageHandler == IntPtr.Zero)
+            {
+                return result;
+            }
+
             try
             {
                 resource.packageIni.PluginApi.v(
@@ -143,6 +153,12 @@ namespace game
             if (externalBuffer.size > 0)
             {
                 return externalBuffer;
+            }
+
+            if (resource.packageIni.ManagedPakReader.TryRead(this.path, out resource.Buffer managedBuffer)
+                && managedBuffer.size > 0)
+            {
+                return managedBuffer;
             }
 
             if (resource.Cache.resourcePackageHandler == IntPtr.Zero)
@@ -217,6 +233,12 @@ namespace game
 
         private resource.SPR.FrameCount GetSprFrameCount()
         {
+            if (resource.packageIni.ManagedPakReader.TryReadSprInfo(this.path, out resource.SPR.Info managedInfo)
+                && managedInfo != null)
+            {
+                return managedInfo.frameCount;
+            }
+
             if (resource.Cache.resourcePackageHandler == IntPtr.Zero || string.IsNullOrEmpty(this.path))
             {
                 return (ushort)0;
@@ -237,6 +259,12 @@ namespace game
         [SecurityCritical]
         private resource.SPR.Info GetSprInfo()
         {
+            if (resource.packageIni.ManagedPakReader.TryReadSprInfo(this.path, out resource.SPR.Info managedInfo)
+                && managedInfo != null)
+            {
+                return managedInfo;
+            }
+
             if (resource.Cache.resourcePackageHandler == IntPtr.Zero || string.IsNullOrEmpty(this.path))
             {
                 return null;
@@ -278,6 +306,12 @@ namespace game
         [SecurityCritical]
         private resource.SPR.FrameInfo GetSprFrameInfo(ushort _frameIndex)
         {
+            if (resource.packageIni.ManagedPakReader.TryReadSprFrameInfo(this.path, _frameIndex, out resource.SPR.FrameInfo managedFrameInfo)
+                && managedFrameInfo != null)
+            {
+                return managedFrameInfo;
+            }
+
             if (resource.Cache.resourcePackageHandler == IntPtr.Zero || string.IsNullOrEmpty(this.path))
             {
                 return null;
@@ -318,6 +352,11 @@ namespace game
             if (_frameInfo == null || _frameInfo.width == 0 || _frameInfo.height == 0)
             {
                 return new resource.SPR.TextureBuffer(0);
+            }
+
+            if (resource.packageIni.ManagedPakReader.TryReadSprFrameRgba(this.path, _frameInfo, out resource.SPR.TextureBuffer managedTextureBuffer))
+            {
+                return managedTextureBuffer;
             }
 
             int bufferLength = _frameInfo.width * _frameInfo.height * 4;

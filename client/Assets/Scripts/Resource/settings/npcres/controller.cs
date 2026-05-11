@@ -166,6 +166,7 @@ namespace game.resource.settings.npcres
                 }
 
                 part.spriteRenderer.sortingOrder = partPair.Value.layerOrder;
+                part.spriteRenderer.flipY = true;
                 part.rectTransform.anchoredPosition = frameData.anchoredPosition;
                 part.rectTransform.sizeDelta = frameData.sizeDelta;
                 part.spriteRenderer.sprite = frameData.sprite;

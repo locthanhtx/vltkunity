@@ -112,18 +112,32 @@ namespace game.resource
                 return false;
             }
 
+            bool managedReady = packageIni.ManagedPakReader.Initialize(packageRootDirectoryPath);
+            if (!managedReady)
+            {
+                UnityEngine.Debug.LogError("game.resource.PackageIni >> managed pak reader was not initialized.");
+                return false;
+            }
+
             TryRestoreEditorHandler(packageRootDirectoryPath);
 
             if (game.resource.Cache.resourcePackageHandler.ToInt64() == 0)
             {
-                game.resource.Cache.resourcePackageHandler = game.resource.packageIni.Handler.CreateHandler(packageRootDirectoryPath);
-                StoreEditorHandler(packageRootDirectoryPath);
+                try
+                {
+                    game.resource.Cache.resourcePackageHandler = game.resource.packageIni.Handler.CreateHandler(packageRootDirectoryPath);
+                    StoreEditorHandler(packageRootDirectoryPath);
+                }
+                catch (Exception exception)
+                {
+                    UnityEngine.Debug.LogWarning("game.resource.PackageIni >> native package handler unavailable, managed reader will be used: " + exception.Message);
+                }
             }
 
             if (game.resource.Cache.resourcePackageHandler.ToInt64() == 0)
             {
-                UnityEngine.Debug.LogError("game.resource.PackageIni >> native package handler was not created.");
-                return false;
+                UnityEngine.Debug.LogWarning("game.resource.PackageIni >> native package handler was not created.");
+                return true;
             }
 
             List<string> packageStatusList = game.resource.packageIni.Handler.GetElementStatusList(game.resource.Cache.resourcePackageHandler);
@@ -137,7 +151,7 @@ namespace game.resource
 
             UnityEngine.Debug.Log(report);
 
-            return game.resource.Cache.resourcePackageHandler.ToInt64() != 0;
+            return managedReady;
         }
 
         public static bool InitializeService()
@@ -151,16 +165,30 @@ namespace game.resource
                 return false;
             }
 
+            bool managedReady = packageIni.ManagedPakReader.Initialize(packageRootDirectoryPath);
+            if (!managedReady)
+            {
+                UnityEngine.Debug.LogError("game.resource.PackageIni >> managed service pak reader was not initialized.");
+                return false;
+            }
+
             TryRestoreEditorHandler(packageRootDirectoryPath);
 
             if (game.resource.Cache.resourcePackageHandler.ToInt64() == 0)
             {
-                game.resource.Cache.resourcePackageHandler = game.resource.packageIni.Handler.CreateHandler(packageRootDirectoryPath);
-                StoreEditorHandler(packageRootDirectoryPath);
+                try
+                {
+                    game.resource.Cache.resourcePackageHandler = game.resource.packageIni.Handler.CreateHandler(packageRootDirectoryPath);
+                    StoreEditorHandler(packageRootDirectoryPath);
+                }
+                catch (Exception exception)
+                {
+                    UnityEngine.Debug.LogWarning("game.resource.PackageIni >> native service package handler unavailable, managed reader will be used: " + exception.Message);
+                }
             }
 
 
-            return game.resource.Cache.resourcePackageHandler.ToInt64() != 0;
+            return managedReady;
         }
     }
 }

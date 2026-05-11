@@ -7,6 +7,11 @@ namespace game.resource.mapServer
     {
         public static mapServer.Element.NpcData[] Npc(resource.settings.MapList.MapInfo mapInfo)
         {
+            if (resource.Cache.resourcePackageHandler == IntPtr.Zero)
+            {
+                return Array.Empty<mapServer.Element.NpcData>();
+            }
+
             int elementCount = 0;
             IntPtr parseHandle = resource.packageIni.PluginApi.g(
                 resource.Cache.resourcePackageHandler,

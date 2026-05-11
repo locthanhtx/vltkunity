@@ -121,7 +121,7 @@ namespace game.network.jx
         private const int NpcRequestCommandSize = 1 + sizeof(uint) + NameLength;
         private const uint ClassicMobileKey = 54354353;
         private static readonly Encoding StrictUtf8Encoding = new UTF8Encoding(false, true);
-        private static readonly Encoding GbkEncoding = Encoding.GetEncoding(936);
+        private static readonly Encoding GbkEncoding = CreateEncodingOrFallback(936, Encoding.UTF8, "GBK");
         private static readonly ushort[] Tcvn2Uni1 =
         {
             0x0000, 0x00da, 0x1ee4, 0x0003, 0x1eea, 0x1eec, 0x1eee, 0x0007,
@@ -148,6 +148,20 @@ namespace game.network.jx
             0x1ed6, 0x1ee7, 0x0169, 0x00fa, 0x1ee5, 0x1eeb, 0x1eed, 0x1eef,
             0x1ee9, 0x1ef1, 0x1ef3, 0x1ef7, 0x1ef9, 0x00fd, 0x1ef5, 0x1ed0
         };
+
+        private static Encoding CreateEncodingOrFallback(int codePage, Encoding fallback, string label)
+        {
+            try
+            {
+                return Encoding.GetEncoding(codePage);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning("JxClassicClient cannot load " + label + " code page " + codePage +
+                                 ", fallback to " + fallback.WebName + ": " + exception.Message);
+                return fallback;
+            }
+        }
 
         private TcpClient tcpClient;
         private NetworkStream stream;
