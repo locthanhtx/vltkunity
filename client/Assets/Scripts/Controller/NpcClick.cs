@@ -257,7 +257,7 @@ public class NpcClick : MonoBehaviour, ICharacterObj
         var enemy = Utils.GetRelation(PlayerMain.instance, this);
         if (enemy == NPCRELATION.relation_enemy)
         {
-            //npcListener.NpcMouseUP(npcId);
+            PhotonManager.Instance.NpcMgrs?.NpcMouseUP(npcId);
             ResolveMainSkill(out int skillId, out byte skillLevel);
 
             Dictionary<byte, object> opParameters = new()

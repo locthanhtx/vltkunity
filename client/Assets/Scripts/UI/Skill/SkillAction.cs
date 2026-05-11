@@ -124,7 +124,7 @@ public class SkillAction : MonoBehaviour
         };
 
         string targetMode = "forward";
-        bool needsTargetOnly = SkillNeedsTargetOnly(skillSetting);
+        bool needsSelectedTarget = SkillNeedsSelectedTarget(skillSetting);
         bool canUseTarget = SkillCanUseTarget(skillSetting);
 
         if (SkillTargetsSelf(skillSetting))
@@ -141,7 +141,7 @@ public class SkillAction : MonoBehaviour
         }
         else
         {
-            if (needsTargetOnly)
+            if (needsSelectedTarget)
             {
                 Debug.LogWarning("PanelHotKeys CastSkill needs target. slot=" + skillLocationCast +
                                  " skillId=" + skill.id +
@@ -195,9 +195,10 @@ public class SkillAction : MonoBehaviour
         return skillSetting.m_bTargetEnemy != 0 || skillSetting.m_bTargetOnly != 0;
     }
 
-    private static bool SkillNeedsTargetOnly(SkillSetting skillSetting)
+    private static bool SkillNeedsSelectedTarget(SkillSetting skillSetting)
     {
-        return skillSetting != null && skillSetting.m_bTargetOnly != 0;
+        return skillSetting != null &&
+               (skillSetting.m_bTargetOnly != 0 || skillSetting.m_bTargetEnemy != 0);
     }
 
     private static bool SkillTargetsSelf(SkillSetting skillSetting)

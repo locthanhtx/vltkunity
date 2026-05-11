@@ -1649,20 +1649,38 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
 
     private void StopClassicSkillForTarget(int targetId)
     {
+        bool stoppedPendingCast = false;
         if (pendingClassicSkillCast != null && pendingClassicSkillCast.TargetId == targetId)
         {
             pendingClassicSkillCast = null;
+            stoppedPendingCast = true;
         }
 
-        StopClassicMainSkillAction();
+        if (NpcMgrs != null && NpcMgrs.GetCurrentTargetID() == targetId)
+        {
+            NpcMgrs.ClearTarget();
+        }
+
+        StopClassicMainSkillAction(stoppedPendingCast);
     }
 
-    private void StopClassicMainSkillAction()
+    private void StopClassicMainSkillAction(bool forceStopMove = false)
     {
         game.resource.settings.npcres.Controller mainPlayer = world != null ? world.GetMainPlayer() : null;
-        if (mainPlayer == null || classicLocalMovementActive)
+        if (mainPlayer == null)
         {
             return;
+        }
+
+        if (classicLocalMovementActive && !forceStopMove)
+        {
+            return;
+        }
+
+        if (forceStopMove)
+        {
+            classicLocalMovementActive = false;
+            world.StopMainPlayerMove();
         }
 
         int doing = (int)mainPlayer.data.m_Doing;
@@ -1692,6 +1710,11 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
 
         game.resource.settings.npcres.Controller caster = FindClassicController(sync.Id);
         if (caster == null)
+        {
+            return;
+        }
+
+        if (!ShouldAcceptClassicSkillCastSync(sync))
         {
             return;
         }
@@ -1732,6 +1755,26 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
 
         NpcClick npc = NpcMgrs != null ? NpcMgrs.FindNpc(id) : null;
         return npc != null && npc.IsAlive ? npc.GetController() : null;
+    }
+
+    private bool ShouldAcceptClassicSkillCastSync(ClassicSkillCastSync sync)
+    {
+        if (sync == null || sync.MpsX >= 0 || sync.MpsY <= 0)
+        {
+            return true;
+        }
+
+        if (FindClassicController(sync.MpsY) != null)
+        {
+            return true;
+        }
+
+        if (sync.Id == PlayerId)
+        {
+            StopClassicSkillForTarget(sync.MpsY);
+        }
+
+        return false;
     }
 
     private static bool IsClassicControllerAlive(game.resource.settings.npcres.Controller controller)
@@ -2648,6 +2691,7 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         game.resource.settings.npcres.Controller target = FindClassicController(mpsY);
         if (target == null)
         {
+            StopClassicSkillForTarget(mpsY);
             Debug.LogWarning("JxClassicClient skill blocked. target missing skill=" + skillSetting.m_nId +
                              " target=" + mpsY);
             return false;
@@ -2730,6 +2774,7 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         if (target == null || world.GetMainPlayer() == null)
         {
             pendingClassicSkillCast = null;
+            StopClassicMainSkillAction(true);
             return;
         }
 
