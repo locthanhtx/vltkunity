@@ -1,10 +1,16 @@
-﻿
+
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 
 namespace game.resource.settings.skill
 {
     public class SkillSettingLevel : skill.SkillSettingBase
     {
+#if SKILL_TIMING
+        private static readonly HashSet<int> LoadLevelTimingLogged = new();
+#endif
+
         public void LoadLevel(int skillId, int level)
         {
             if (Cache.Settings.Skill.skillsIdToRowIndexMapping.ContainsKey(skillId) == false)
@@ -24,9 +30,26 @@ namespace game.resource.settings.skill
                 this.skillLevel = level;
             }
 
-            resource.Script script = new resource.Script(scriptPath);
+            resource.Script script = null;
+#if SKILL_TIMING
+            int timingKey = (skillId * 100) + level;
+            bool logTiming = LoadLevelTimingLogged.Add(timingKey);
+            Stopwatch totalWatch = logTiming ? Stopwatch.StartNew() : null;
+            Stopwatch luaLoadWatch = logTiming ? Stopwatch.StartNew() : null;
+            long callMs = 0;
+            long parseMs = 0;
+            int callCount = 0;
+            int parseCount = 0;
+#endif
             try
             {
+                script = resource.Script.GetShared(scriptPath);
+#if SKILL_TIMING
+                if (logTiming)
+                {
+                    luaLoadWatch.Stop();
+                }
+#endif
                 //string debugInfo = string.Empty;
                 //UnityEngine.Debug.Log("--------------------------------");
 
@@ -46,11 +69,33 @@ namespace game.resource.settings.skill
                     //debugInfo += "|";
                     //debugInfo += szSettingNameValue;
 
+#if SKILL_TIMING
+                    Stopwatch callWatch = logTiming ? Stopwatch.StartNew() : null;
+#endif
                     string szResult = script.CallFunction<string>("GetSkillLevelData", szSettingNameValue, szSettingDataValue, level);
+#if SKILL_TIMING
+                    if (logTiming)
+                    {
+                        callWatch.Stop();
+                        callMs += callWatch.ElapsedMilliseconds;
+                        callCount++;
+                    }
+#endif
 
                     if (szResult != null && szResult != string.Empty)
                     {
+#if SKILL_TIMING
+                        Stopwatch parseWatch = logTiming ? Stopwatch.StartNew() : null;
+#endif
                         this.ParseString2MagicAttrib(level, szSettingNameValue, szResult);
+#if SKILL_TIMING
+                        if (logTiming)
+                        {
+                            parseWatch.Stop();
+                            parseMs += parseWatch.ElapsedMilliseconds;
+                            parseCount++;
+                        }
+#endif
                     }
                 }
 
@@ -58,7 +103,23 @@ namespace game.resource.settings.skill
             }
             finally
             {
-                script.Release();
+#if SKILL_TIMING
+                if (logTiming)
+                {
+                    totalWatch.Stop();
+                    UnityEngine.Debug.Log(
+                        "Skill timing: LoadLevel skillId=" + skillId +
+                        " level=" + level +
+                        " script=" + scriptPath +
+                        " luaLoad=" + (luaLoadWatch != null ? luaLoadWatch.ElapsedMilliseconds : 0) + "ms" +
+                        " calls=" + callCount +
+                        " call=" + callMs + "ms" +
+                        " parsed=" + parseCount +
+                        " parse=" + parseMs + "ms" +
+                        " total=" + totalWatch.ElapsedMilliseconds + "ms");
+                }
+#endif
+                script?.Release();
             }
         }
 

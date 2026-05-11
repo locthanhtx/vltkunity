@@ -1,8 +1,15 @@
-﻿
+
+using System.Collections.Generic;
+using System.Diagnostics;
+
 namespace game.resource.settings.skill
 {
     public class SkillSettingGetter : skill.SkillSettingLevel
     {
+#if SKILL_TIMING
+        private static readonly HashSet<int> DescriptionTimingLogged = new();
+#endif
+
         private string GetMagicProperties()
         {
             string result = string.Empty;
@@ -105,6 +112,13 @@ namespace game.resource.settings.skill
                 return this.description;
             }
 
+#if SKILL_TIMING
+            int timingKey = (this.m_nId * 100) + this.skillLevel;
+            bool logTiming = DescriptionTimingLogged.Add(timingKey);
+            Stopwatch totalWatch = logTiming ? Stopwatch.StartNew() : null;
+            Stopwatch nextLevelWatch = null;
+#endif
+
             string result = string.Empty;
 
             result += "Đẳng cấp hiện thời: " + this.skillLevel;
@@ -139,10 +153,39 @@ namespace game.resource.settings.skill
             result += "\n";
             result += "<color=red>Đẳng cấp kế tiếp";
             result += "\n";
-            result += settings.skill.SkillSetting.Get(this.m_nId, this.skillLevel + 1).GetMagicProperties();
+            settings.skill.SkillSetting nextSkill;
+#if SKILL_TIMING
+            if (logTiming)
+            {
+                nextLevelWatch = Stopwatch.StartNew();
+            }
+#endif
+            nextSkill = settings.skill.SkillSetting.Get(this.m_nId, this.skillLevel + 1);
+#if SKILL_TIMING
+            if (logTiming)
+            {
+                nextLevelWatch.Stop();
+            }
+#endif
+            if (nextSkill != null)
+            {
+                result += nextSkill.GetMagicProperties();
+            }
             result += "</color>";
 
-            return this.description = result;
+            this.description = result;
+#if SKILL_TIMING
+            if (logTiming)
+            {
+                totalWatch.Stop();
+                UnityEngine.Debug.Log(
+                    "Skill timing: GetDescription skillId=" + this.m_nId +
+                    " level=" + this.skillLevel +
+                    " nextLevelGet=" + (nextLevelWatch != null ? nextLevelWatch.ElapsedMilliseconds : 0) + "ms" +
+                    " total=" + totalWatch.ElapsedMilliseconds + "ms");
+            }
+#endif
+            return this.description;
         }
     }
 }

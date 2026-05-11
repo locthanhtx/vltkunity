@@ -1,4 +1,5 @@
 
+using System.Collections.Generic;
 using XLua;
 
 namespace game.resource
@@ -32,18 +33,44 @@ end
         ////////////////////////////////////////////////////////////////////////////////
 
         private LuaEnv luaenv;
+        private readonly bool shared;
+        private readonly Dictionary<string, LuaFunction> functionCache = new();
+        private static readonly Dictionary<string, Script> sharedScripts = new();
         private static resource.Buffer onCreateBuffer;
         private static bool onCreateBufferChecked;
 
         ////////////////////////////////////////////////////////////////////////////////
 
         public Script(string scriptPath)
+            : this(scriptPath, false)
         {
+        }
+
+        private Script(string scriptPath, bool shared)
+        {
+            this.shared = shared;
             this.Initialize();
             this.Load(scriptPath);
         }
 
         ////////////////////////////////////////////////////////////////////////////////
+
+        public static Script GetShared(string scriptPath)
+        {
+            if (string.IsNullOrEmpty(scriptPath))
+            {
+                return null;
+            }
+
+            if (sharedScripts.TryGetValue(scriptPath, out Script cachedScript))
+            {
+                return cachedScript;
+            }
+
+            Script script = new Script(scriptPath, true);
+            sharedScripts[scriptPath] = script;
+            return script;
+        }
 
         private void Initialize()
         {
@@ -85,6 +112,12 @@ end
 
         public void Release()
         {
+            if (this.shared)
+            {
+                return;
+            }
+
+            this.functionCache.Clear();
             this.luaenv?.Dispose();
             this.luaenv = null;
         }
@@ -93,7 +126,7 @@ end
 
         public Typename CallFunction<Typename>(string functionName, params object[] args)
         {
-            LuaFunction luaFunction = this.luaenv?.Global.Get<LuaFunction>(functionName);
+            LuaFunction luaFunction = this.GetFunction(functionName);
             if (luaFunction == null)
             {
                 return default;
@@ -122,7 +155,28 @@ end
 
         public void CallFunction(string functionName, params object[] args)
         {
-            this.luaenv?.Global.Get<LuaFunction>(functionName)?.Call(args);
+            this.GetFunction(functionName)?.Call(args);
+        }
+
+        private LuaFunction GetFunction(string functionName)
+        {
+            if (this.luaenv == null || string.IsNullOrEmpty(functionName))
+            {
+                return null;
+            }
+
+            if (this.functionCache.TryGetValue(functionName, out LuaFunction cachedFunction))
+            {
+                return cachedFunction;
+            }
+
+            LuaFunction luaFunction = this.luaenv.Global.Get<LuaFunction>(functionName);
+            if (luaFunction != null)
+            {
+                this.functionCache[functionName] = luaFunction;
+            }
+
+            return luaFunction;
         }
     }
 }

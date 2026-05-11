@@ -1,8 +1,15 @@
 
+using System.Collections.Generic;
+using System.Diagnostics;
+
 namespace game.resource.settings.skill
 {
     public class SkillSetting : skill.SkillSettingGetter
     {
+        #if SKILL_TIMING
+        private static readonly HashSet<int> LoadTimingLogged = new();
+        #endif
+
         public static skill.SkillSetting GetBase(int skillId)
         {
             int cacheKey = -skillId;
@@ -33,6 +40,10 @@ namespace game.resource.settings.skill
 
             if (Cache.Settings.Skill.skillsIdToDataMapping.ContainsKey(cacheKey) == false)
             {
+#if SKILL_TIMING
+                bool logTiming = LoadTimingLogged.Add(cacheKey);
+                Stopwatch totalWatch = logTiming ? Stopwatch.StartNew() : null;
+#endif
                 skill.SkillSetting newSkillSetting = new skill.SkillSetting();
                 newSkillSetting.LoadBase(skillId);
                 try
@@ -48,6 +59,16 @@ namespace game.resource.settings.skill
                 }
 
                 Cache.Settings.Skill.skillsIdToDataMapping[cacheKey] = newSkillSetting;
+#if SKILL_TIMING
+                if (logTiming)
+                {
+                    totalWatch.Stop();
+                    UnityEngine.Debug.Log(
+                        "Skill timing: Get skillId=" + skillId +
+                        " level=" + skillLevel +
+                        " total=" + totalWatch.ElapsedMilliseconds + "ms");
+                }
+#endif
             }
 
             return Cache.Settings.Skill.skillsIdToDataMapping[cacheKey];

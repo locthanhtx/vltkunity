@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using game.resource.settings.skill;
 using Photon.ShareLibrary.Entities;
 using Unity.VisualScripting;
@@ -28,6 +29,9 @@ public class SkillDetail : MonoBehaviour
     private PlayerSkill skill;
     private int location;
     private bool isSkillActive2;
+#if SKILL_TIMING
+    private static readonly HashSet<int> DetailTimingLogged = new();
+#endif
 
     private void Start()
     {
@@ -100,6 +104,12 @@ public class SkillDetail : MonoBehaviour
             return;
         }
 
+#if SKILL_TIMING
+        int timingKey = (skill.id * 100) + Mathf.Max(1, skill.level);
+        bool logTiming = DetailTimingLogged.Add(timingKey);
+        Stopwatch totalWatch = logTiming ? Stopwatch.StartNew() : null;
+#endif
+
         SkillSetting skillSetting = SkillIconLoader.TryGetSetting(skill.id, skill.level);
 
         if (nameSkill != null)
@@ -122,6 +132,17 @@ public class SkillDetail : MonoBehaviour
         {
             skillDetail.text = SkillIconLoader.Description(skillSetting, skill.id, skill.level);
         }
+
+#if SKILL_TIMING
+        if (logTiming)
+        {
+            totalWatch.Stop();
+            UnityEngine.Debug.Log(
+                "Skill timing: SkillDetail.Init skillId=" + skill.id +
+                " level=" + skill.level +
+                " total=" + totalWatch.ElapsedMilliseconds + "ms");
+        }
+#endif
     }
 
     public void UseSkill(int location)
