@@ -78,11 +78,16 @@ namespace game.resource.settings.skill
 
             string[] valueSplited = szValue.Split(',');
             resource.settings.skill.SkillSettingLevel.KMagicAttrib magic = new KMagicAttrib(magicId);
-            if (valueSplited.Length > 0) magic.nValue[0] = int.Parse(Regex.Replace(valueSplited[0], "[^0-9-]", string.Empty));
-            if (valueSplited.Length > 1) magic.nValue[1] = int.Parse(Regex.Replace(valueSplited[1], "[^0-9-]", string.Empty));
-            if (valueSplited.Length > 2) magic.nValue[2] = int.Parse(Regex.Replace(valueSplited[2], "[^0-9-]", string.Empty));
+            if (valueSplited.Length > 0) magic.nValue[0] = ParseMagicValue(valueSplited[0]);
+            if (valueSplited.Length > 1) magic.nValue[1] = ParseMagicValue(valueSplited[1]);
+            if (valueSplited.Length > 2) magic.nValue[2] = ParseMagicValue(valueSplited[2]);
 
             ////////////////////////////////////////////////////////////////////////////////
+
+            if (ApplyMagicAttribLikeAxmol(ulLevel, magicKey, magic))
+            {
+                return;
+            }
 
             switch (magicKey)
             {
@@ -298,6 +303,180 @@ namespace game.resource.settings.skill
                     UnityEngine.Debug.Log("ParseString2MagicAttrib catched fail: " + magicKey);
                     break;
             }
+        }
+
+        private static int ParseMagicValue(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return 0;
+            }
+
+            string normalized = Regex.Replace(value, "[^0-9-]", string.Empty);
+            return int.TryParse(normalized, out int result) ? result : 0;
+        }
+
+        private bool ApplyMagicAttribLikeAxmol(int level, string magicKey, KMagicAttrib magic)
+        {
+            int magicId = magic.nAttribType;
+
+            int missleBegin = resource.settings.MagicDesc.KeyToId("missle_begin");
+            int missleEnd = resource.settings.MagicDesc.KeyToId("missle_end");
+            if (magicId > missleBegin && magicId < missleEnd)
+            {
+                this.m_MissleAttribs.Add(magic);
+                return true;
+            }
+
+            int skillBegin = resource.settings.MagicDesc.KeyToId("skill_begin");
+            int skillEnd = resource.settings.MagicDesc.KeyToId("skill_end");
+            if (magicId > skillBegin && magicId < skillEnd)
+            {
+                ApplySkillControlAttrib(magicKey, magic);
+                return true;
+            }
+
+            int damageBegin = resource.settings.MagicDesc.KeyToId("damage_begin");
+            int damageEnd = resource.settings.MagicDesc.KeyToId("damage_end");
+            if (magicId > damageBegin && magicId < damageEnd)
+            {
+                this.m_DamageAttribs.Add(magic);
+                if (MagicKeyEquals(magicKey, "autoattackskill"))
+                {
+                    this.m_StateAttribs.Add(new KMagicAttrib(magic.nAttribType, magic.nValue[0], magic.nValue[1], magic.nValue[2]));
+                }
+
+                return true;
+            }
+
+            if (MagicKeyEquals(magicKey, "mintimepercastonhorse_v"))
+            {
+                this.m_nMinTimePerCastOnHorse = magic.nValue[0];
+                return true;
+            }
+
+            if (ShouldAddImmediateAttrib(magicKey, magic.nValue[1]))
+            {
+                this.m_ImmediateAttribs.Add(magic);
+                ApplyEventAttrib(magicKey, magic);
+                return true;
+            }
+
+            if (MagicKeyEquals(magicKey, "autoreplyskill"))
+            {
+                KMagicAttrib stateMagic = new KMagicAttrib(magic.nAttribType);
+                stateMagic.nValue[0] = MAKELONG((magic.nValue[0] - level) / 256, level);
+                stateMagic.nValue[1] = magic.nValue[1];
+                stateMagic.nValue[2] = magic.nValue[2] / (256 * 18) + magic.nValue[2] % (256 * 18);
+                this.m_StateAttribs.Add(stateMagic);
+                return true;
+            }
+
+            this.m_StateAttribs.Add(magic);
+            return true;
+        }
+
+        private void ApplySkillControlAttrib(string magicKey, KMagicAttrib magic)
+        {
+            if (MagicKeyEquals(magicKey, "skill_cost_v"))
+            {
+                this.m_nCost = magic.nValue[0];
+            }
+            else if (MagicKeyEquals(magicKey, "skill_costtype_v"))
+            {
+                this.m_nSkillCostType = (Defination.NPCATTRIB)magic.nValue[0];
+            }
+            else if (MagicKeyEquals(magicKey, "skill_mintimepercast_v"))
+            {
+                this.m_nMinTimePerCast = magic.nValue[0];
+            }
+            else if (MagicKeyEquals(magicKey, "skill_mintimepercastonhorse_v"))
+            {
+                this.m_nMinTimePerCastOnHorse = magic.nValue[0];
+            }
+            else if (MagicKeyEquals(magicKey, "skill_misslenum_v"))
+            {
+                this.m_nChildSkillNum = magic.nValue[0];
+            }
+            else if (MagicKeyEquals(magicKey, "skill_misslesform_v"))
+            {
+                this.m_eMisslesForm = (Defination.MisslesForm)magic.nValue[0];
+            }
+            else if (MagicKeyEquals(magicKey, "skill_param1_v"))
+            {
+                this.m_nValue1 = magic.nValue[0];
+            }
+            else if (MagicKeyEquals(magicKey, "skill_param2_v"))
+            {
+                this.m_nValue2 = magic.nValue[1];
+            }
+            else if (MagicKeyEquals(magicKey, "skill_eventskilllevel"))
+            {
+                this.m_nEventSkillLevel = magic.nValue[0];
+            }
+            else if (MagicKeyEquals(magicKey, "skill_attackradius"))
+            {
+                this.m_nAttackRadius = magic.nValue[0];
+            }
+        }
+
+        private static bool ShouldAddImmediateAttrib(string magicKey, int value2)
+        {
+            return value2 == 0
+                   || MagicKeyEquals(magicKey, "skill_flyevent")
+                   || MagicKeyEquals(magicKey, "skill_collideevent")
+                   || MagicKeyEquals(magicKey, "skill_vanishedevent")
+                   || MagicKeyEquals(magicKey, "skill_startevent")
+                   || MagicKeyEquals(magicKey, "skill_showevent")
+                   || IsAddSkillDamageKey(magicKey);
+        }
+
+        private static bool IsAddSkillDamageKey(string magicKey)
+        {
+            return MagicKeyEquals(magicKey, "addskilldamage1")
+                   || MagicKeyEquals(magicKey, "addskilldamage2")
+                   || MagicKeyEquals(magicKey, "addskilldamage3")
+                   || MagicKeyEquals(magicKey, "addskilldamage4")
+                   || MagicKeyEquals(magicKey, "addskilldamage5")
+                   || MagicKeyEquals(magicKey, "addskilldamage6")
+                   || MagicKeyEquals(magicKey, "addskilldamage7")
+                   || MagicKeyEquals(magicKey, "addskilldamage8")
+                   || MagicKeyEquals(magicKey, "addskilldamage9")
+                   || MagicKeyEquals(magicKey, "addskilldamage10");
+        }
+
+        private void ApplyEventAttrib(string magicKey, KMagicAttrib magic)
+        {
+            if (MagicKeyEquals(magicKey, "skill_showevent"))
+            {
+                this.m_nShowEvent = magic.nValue[0];
+            }
+            else if (MagicKeyEquals(magicKey, "skill_startevent"))
+            {
+                this.m_bStartEvent = magic.nValue[0] > 0 ? 1 : 0;
+                this.m_nStartSkillId = magic.nValue[2];
+            }
+            else if (MagicKeyEquals(magicKey, "skill_flyevent"))
+            {
+                this.m_bFlyingEvent = magic.nValue[0] > 0 ? 1 : 0;
+                this.m_nFlyEventTime = magic.nValue[1] > 0 ? magic.nValue[1] : 0;
+                this.m_nFlySkillId = magic.nValue[2];
+            }
+            else if (MagicKeyEquals(magicKey, "skill_collideevent"))
+            {
+                this.m_bCollideEvent = magic.nValue[0] > 0 ? 1 : 0;
+                this.m_nCollideSkillId = magic.nValue[2];
+            }
+            else if (MagicKeyEquals(magicKey, "skill_vanishedevent"))
+            {
+                this.m_bVanishedEvent = magic.nValue[0] > 0 ? 1 : 0;
+                this.m_nVanishedSkillId = magic.nValue[2];
+            }
+        }
+
+        private static bool MagicKeyEquals(string magicKey, string expected)
+        {
+            return string.Equals(magicKey, expected, System.StringComparison.OrdinalIgnoreCase);
         }
     }
 }

@@ -2523,9 +2523,11 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         bool isRiding = PlayerMain.instance.IsUseHorse;
         if (skillSetting.m_nHorseLimited == 1 && isRiding)
         {
-            Debug.LogWarning("JxClassicClient skill blocked by horse. skill=" + skillSetting.m_nId +
-                             " horseLimit=1 riding=" + isRiding);
-            return false;
+            PlayerMain.instance.SetHorseRidingLocal(false);
+            PhotonManager.Instance?.RequestClassicRideToggle();
+            Debug.Log("JxClassicClient skill dismount before cast. skill=" + skillSetting.m_nId +
+                      " horseLimit=1");
+            return true;
         }
 
         if (skillSetting.m_nHorseLimited == 2 && !isRiding)

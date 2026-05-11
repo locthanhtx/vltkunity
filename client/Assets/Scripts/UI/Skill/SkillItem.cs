@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using game.resource.settings.skill;
 using Photon.ShareLibrary.Entities;
 using UnityEngine;
@@ -102,6 +103,8 @@ internal static class SkillIconLoader
     private static readonly System.Collections.Generic.Dictionary<int, SkillSetting> BaseSettingCache = new();
     private static readonly System.Collections.Generic.Dictionary<string, Sprite> SprIconCache = new();
     private static readonly System.Collections.Generic.Dictionary<int, Sprite> ResourceIconCache = new();
+    private static readonly System.Collections.Generic.Dictionary<int, string> DetailTextCache = new();
+    private static readonly System.Collections.Generic.HashSet<int> PreloadedDetailKeys = new();
     private static readonly System.Collections.Generic.HashSet<string> MissingSprIconLogs = new();
     private static readonly System.Collections.Generic.HashSet<int> MissingSkillNameLogs = new();
 
@@ -152,6 +155,61 @@ internal static class SkillIconLoader
         {
             Debug.LogWarning("Skill setting failed for skillId=" + skillId + " level=" + skillLevel + ": " + exception.GetBaseException().Message);
             return null;
+        }
+    }
+
+    public static void PreloadSkillDetail(PlayerSkill skill)
+    {
+        if (skill == null)
+        {
+            return;
+        }
+
+        PreloadSkillDetail(skill.id, skill.level);
+    }
+
+    public static void PreloadSkillDetails(IEnumerable<PlayerSkill> skills)
+    {
+        if (skills == null)
+        {
+            return;
+        }
+
+        foreach (PlayerSkill skill in skills)
+        {
+            PreloadSkillDetail(skill);
+        }
+    }
+
+    public static void PreloadSkillDetail(int skillId, int skillLevel)
+    {
+        if (skillId <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            int safeLevel = Mathf.Max(1, skillLevel);
+            int detailKey = MakeDetailKey(skillId, safeLevel);
+            if (PreloadedDetailKeys.Contains(detailKey))
+            {
+                return;
+            }
+
+            SkillSetting baseSetting = TryGetBaseSetting(skillId);
+            if (baseSetting != null)
+            {
+                LoadIcon(baseSetting, skillId);
+            }
+
+            SkillSetting skillSetting = TryGetSetting(skillId, safeLevel);
+            Description(skillSetting, skillId, safeLevel);
+            PreloadedDetailKeys.Add(detailKey);
+        }
+        catch (System.Exception exception)
+        {
+            Debug.LogWarning("Skill detail preload failed for skillId=" + skillId + " level=" + skillLevel + ": " + exception.GetBaseException().Message);
         }
     }
 
@@ -292,6 +350,32 @@ internal static class SkillIconLoader
 
     public static string Description(SkillSetting skillSetting, int skillId)
     {
+        int skillLevel = skillSetting != null ? skillSetting.skillLevel : 1;
+        return Description(skillSetting, skillId, skillLevel);
+    }
+
+    public static string Description(SkillSetting skillSetting, int skillId, int skillLevel)
+    {
+        int safeLevel = Mathf.Max(1, skillLevel);
+        int detailKey = MakeDetailKey(skillId, safeLevel);
+        if (DetailTextCache.TryGetValue(detailKey, out string cachedText))
+        {
+            return cachedText;
+        }
+
+        if (skillSetting == null || skillSetting.skillLevel != safeLevel)
+        {
+            skillSetting = TryGetSetting(skillId, safeLevel);
+        }
+
+        string text = BuildDescription(skillSetting, skillId);
+        DetailTextCache[detailKey] = text;
+        PreloadedDetailKeys.Add(detailKey);
+        return text;
+    }
+
+    private static string BuildDescription(SkillSetting skillSetting, int skillId)
+    {
         if (HasValidSetting(skillSetting, skillId) == false)
         {
             return string.Empty;
@@ -333,5 +417,10 @@ internal static class SkillIconLoader
         }
 
         return text;
+    }
+
+    private static int MakeDetailKey(int skillId, int skillLevel)
+    {
+        return (skillId * 100) + Mathf.Max(1, skillLevel);
     }
 }

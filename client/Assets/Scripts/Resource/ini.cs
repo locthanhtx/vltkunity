@@ -22,7 +22,7 @@ namespace game.resource
 
         private void Initialize(string _literalData)
         {
-            string[] rowVector = _literalData.Split("\r\n");
+            string[] rowVector = _literalData.Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.None);
             string lastSectionName = string.Empty;
 
             for (int indexRow = 0; indexRow < rowVector.Length; indexRow++)

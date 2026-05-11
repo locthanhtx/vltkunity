@@ -26,6 +26,8 @@ public class PlayerSkills : MonoBehaviour
     public List<GameObject> SkillActives;
     private Dictionary<ushort, PlayerSkill> playerSkills;
     private bool IsSkillActive2 = false;
+    private string lastSkillListSignature = string.Empty;
+    private bool hasBuiltSkillList = false;
 
     void Start()
     {
@@ -52,14 +54,11 @@ public class PlayerSkills : MonoBehaviour
             playerSkills = new Dictionary<ushort, PlayerSkill>();
         }
 
-        try
-        {
-            ResetSkillList();
-        }
-        catch (System.Exception exception)
-        {
-            Debug.LogWarning("PlayerSkills reset list failed: " + exception.Message);
-        }
+        string skillListSignature = BuildSkillListSignature(playerSkills);
+        bool shouldRebuildList = hasBuiltSkillList == false
+            || skillListSignature != lastSkillListSignature
+            || Skills == null
+            || Skills.transform.childCount == 0;
 
         try
         {
@@ -70,13 +69,27 @@ public class PlayerSkills : MonoBehaviour
             Debug.LogWarning("PlayerSkills active setup failed: " + exception.Message);
         }
 
-        try
+        if (shouldRebuildList)
         {
-            SetUpSkillList(playerSkills);
-        }
-        catch (System.Exception exception)
-        {
-            Debug.LogWarning("PlayerSkills list setup failed: " + exception.Message);
+            try
+            {
+                ResetSkillList();
+            }
+            catch (System.Exception exception)
+            {
+                Debug.LogWarning("PlayerSkills reset list failed: " + exception.Message);
+            }
+
+            try
+            {
+                SetUpSkillList(playerSkills);
+                lastSkillListSignature = skillListSignature;
+                hasBuiltSkillList = true;
+            }
+            catch (System.Exception exception)
+            {
+                Debug.LogWarning("PlayerSkills list setup failed: " + exception.Message);
+            }
         }
     }
 
@@ -190,6 +203,33 @@ public class PlayerSkills : MonoBehaviour
         }
 
         Debug.Log("PlayerSkills list refreshed. skills=" + playerSkills.Count + " items=" + createdCount);
+    }
+
+    private static string BuildSkillListSignature(Dictionary<ushort, PlayerSkill> playerSkills)
+    {
+        if (playerSkills == null || playerSkills.Count <= 0)
+        {
+            return string.Empty;
+        }
+
+        List<ushort> skillIds = new List<ushort>(playerSkills.Keys);
+        skillIds.Sort();
+
+        System.Text.StringBuilder result = new System.Text.StringBuilder(skillIds.Count * 8);
+        foreach (ushort skillId in skillIds)
+        {
+            if (playerSkills.TryGetValue(skillId, out PlayerSkill skill) == false || ShouldHideSkill(skill))
+            {
+                continue;
+            }
+
+            result.Append(skill.id);
+            result.Append(':');
+            result.Append(skill.level);
+            result.Append(';');
+        }
+
+        return result.ToString();
     }
 
     private static bool ShouldHideSkill(PlayerSkill skill)

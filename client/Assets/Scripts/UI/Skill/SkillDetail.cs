@@ -120,7 +120,7 @@ public class SkillDetail : MonoBehaviour
         // Skill detail
         if (skillDetail != null)
         {
-            skillDetail.text = SkillIconLoader.Description(skillSetting, skill.id);
+            skillDetail.text = SkillIconLoader.Description(skillSetting, skill.id, skill.level);
         }
     }
 

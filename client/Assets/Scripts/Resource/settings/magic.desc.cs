@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 
 namespace game.resource.settings
 {
@@ -17,7 +18,6 @@ skill_param2_v
 skill_attackradius
 skill_mintimepercastonhorse_v
 skill_skillexp_v
-skill_reserve3
 skill_desc
 skill_eventskilllevel
 skill_end
@@ -321,10 +321,13 @@ autocastskill
 normal_end
 ".Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
 
+        private static readonly Dictionary<string, int> MagicAttribKeyToId = BuildMagicAttribKeyToId();
+        private static readonly HashSet<int> MissingDescWarnings = new HashSet<int>();
+
         private static readonly string[] MagicDescIniCandidates =
         {
-            "\\settings\\MagicDesc_mobile_vn.Ini",
             "\\settings\\MagicDesc_mobile.Ini",
+            "\\settings\\MagicDesc_mobile_vn.Ini",
             "\\settings\\magicdesc.ini",
         };
 
@@ -335,16 +338,29 @@ normal_end
             public string desc;
         }
 
+        private static Dictionary<string, int> BuildMagicAttribKeyToId()
+        {
+            Dictionary<string, int> result = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            for (int index = 0; index < MagicAttribKeys.Length; index++)
+            {
+                string key = MagicAttribKeys[index];
+                if (string.IsNullOrWhiteSpace(key) || result.ContainsKey(key))
+                {
+                    continue;
+                }
+
+                result[key] = index;
+            }
+
+            return result;
+        }
+
         public static void Initialize()
         {
             resource.Cache.Settings.MagicDesc.id = new Dictionary<int, Table>();
-            resource.Cache.Settings.MagicDesc.key = new Dictionary<string, Table>();
+            resource.Cache.Settings.MagicDesc.key = new Dictionary<string, Table>(StringComparer.OrdinalIgnoreCase);
 
             LoadTable(resource.mapping.Settings.magicDescTable);
-            if (resource.Cache.Settings.MagicDesc.id.Count > 0)
-            {
-                return;
-            }
 
             foreach (string iniPath in MagicDescIniCandidates)
             {
@@ -371,7 +387,13 @@ normal_end
 
         private static bool LoadIni(string path)
         {
-            resource.Ini ini = Game.Resource(path).Get<resource.Ini>();
+            resource.Buffer buffer = Game.Resource(path).Get<resource.Buffer>();
+            if (buffer == null || buffer.size <= 0)
+            {
+                return false;
+            }
+
+            resource.Ini ini = new resource.Ini(ReadMagicDescIniText(buffer));
             if (ini.IsEmpty())
             {
                 return false;
@@ -383,14 +405,44 @@ normal_end
                 return false;
             }
 
+            int loadedDescCount = 0;
             for (int index = 0; index < MagicAttribKeys.Length; index++)
             {
                 string key = MagicAttribKeys[index];
                 descs.TryGetValue(key.ToLowerInvariant(), out string desc);
-                AddEntry(index, key, desc ?? string.Empty);
+                if (string.IsNullOrEmpty(desc) == false)
+                {
+                    loadedDescCount++;
+                }
+
+                AddEntry(index, key, DecodeMagicDescText(desc ?? string.Empty));
             }
 
-            return true;
+            return loadedDescCount > 0;
+        }
+
+        private static string ReadMagicDescIniText(resource.Buffer buffer)
+        {
+            resource.Buffer.Encoding detectedEncoding = buffer.GetEncoding(System.Text.Encoding.GetEncoding(1252));
+            if (detectedEncoding.byteOrderMarks > 0)
+            {
+                return detectedEncoding.encoding.GetString(
+                    buffer.data,
+                    detectedEncoding.byteOrderMarks,
+                    buffer.size - detectedEncoding.byteOrderMarks);
+            }
+
+            return System.Text.Encoding.GetEncoding(1252).GetString(buffer.data, 0, buffer.size);
+        }
+
+        private static string DecodeMagicDescText(string desc)
+        {
+            if (string.IsNullOrEmpty(desc))
+            {
+                return string.Empty;
+            }
+
+            return resource.formater.TCVN3.UTF8(desc);
         }
 
         private static void AddEntry(int id, string key, string desc)
@@ -400,11 +452,20 @@ normal_end
                 return;
             }
 
+            key = key.Trim();
+            desc ??= string.Empty;
+            if (string.IsNullOrEmpty(desc)
+                && resource.Cache.Settings.MagicDesc.id.TryGetValue(id, out Table existingById)
+                && string.IsNullOrEmpty(existingById.desc) == false)
+            {
+                desc = existingById.desc;
+            }
+
             Table newField = new Table
             {
                 id = id,
                 key = key,
-                desc = desc ?? string.Empty
+                desc = desc
             };
 
             resource.Cache.Settings.MagicDesc.id[newField.id] = newField;
@@ -422,26 +483,41 @@ normal_end
 
         public static string IdToKey(int magicId)
         {
-            EnsureInitialized();
+            if (magicId >= 0 && magicId < MagicAttribKeys.Length)
+            {
+                return MagicAttribKeys[magicId];
+            }
 
-            if (resource.Cache.Settings.MagicDesc.id.ContainsKey(magicId) == false)
+            EnsureInitialized();
+            if (resource.Cache.Settings.MagicDesc.id.TryGetValue(magicId, out Table magicDesc) == false)
             {
                 return null;
             }
 
-            return resource.Cache.Settings.MagicDesc.id[magicId].key;
+            return magicDesc.key;
         }
 
         public static int KeyToId(string key)
         {
-            EnsureInitialized();
-
-            if (resource.Cache.Settings.MagicDesc.key.ContainsKey(key) == false)
+            if (string.IsNullOrWhiteSpace(key))
             {
                 return -1;
             }
 
-            return resource.Cache.Settings.MagicDesc.key[key].id;
+            key = key.Trim();
+            if (MagicAttribKeyToId.TryGetValue(key, out int staticId))
+            {
+                return staticId;
+            }
+
+            EnsureInitialized();
+
+            if (resource.Cache.Settings.MagicDesc.key.TryGetValue(key, out Table magicDesc) == false)
+            {
+                return -1;
+            }
+
+            return magicDesc.id;
         }
 
         public static string Get(settings.skill.SkillSettingData.KMagicAttrib magicAttrib)
@@ -453,25 +529,40 @@ normal_end
                 return string.Empty;
             }
 
-            if (resource.Cache.Settings.MagicDesc.id.ContainsKey(magicAttrib.nAttribType) == false)
+            string magicKey = IdToKey(magicAttrib.nAttribType);
+            if (string.IsNullOrWhiteSpace(magicKey))
             {
                 return "<không xác định: " + magicAttrib.nAttribType + ", table>";
             }
 
-            Table magicDesc = resource.Cache.Settings.MagicDesc.id[magicAttrib.nAttribType];
+            Table magicDesc = null;
+            resource.Cache.Settings.MagicDesc.id.TryGetValue(magicAttrib.nAttribType, out magicDesc);
+            if ((magicDesc == null || string.IsNullOrEmpty(magicDesc.desc))
+                && resource.Cache.Settings.MagicDesc.key.TryGetValue(magicKey, out Table magicDescByKey))
+            {
+                magicDesc = magicDescByKey;
+            }
+
+            if (magicDesc == null || string.IsNullOrEmpty(magicDesc.desc))
+            {
+                return GetMissingDescFallback(magicKey, magicAttrib);
+            }
+
             string keyDesc = settings.item.Getter.GetRichText(magicDesc.desc);
             string result = string.Empty;
 
             if (keyDesc == string.Empty || keyDesc == null)
             {
-                return "<không xác định: " + magicAttrib.nAttribType + ", desc>";
+                return GetMissingDescFallback(magicKey, magicAttrib);
             }
 
             for (int charIndex = 0; charIndex < keyDesc.Length;)
             {
                 char charEntry = keyDesc[charIndex];
 
-                if (charEntry != '#' || charIndex + 3 >= keyDesc.Length)
+                if (charEntry != '#'
+                    || charIndex + 3 >= keyDesc.Length
+                    || IsPlaceholderType(keyDesc[charIndex + 1]) == false)
                 {
                     result += charEntry;
                     charIndex++;
@@ -483,11 +574,106 @@ normal_end
                 char charAddType = keyDesc[charIndex + 3];
                 int dataValue = ResolvePlaceholderValue(magicAttrib, charValue);
 
-                result += ResolvePlaceholderText(charDataType, charAddType, dataValue);
+                result += ResolvePlaceholderText(charDataType, charValue, charAddType, dataValue);
                 charIndex += 4;
             }
 
-            return result;
+            return NormalizeRichMarkup(result);
+        }
+
+        private static bool IsPlaceholderType(char value)
+        {
+            switch (value)
+            {
+                case 'm':
+                case 's':
+                case 'k':
+                case 'd':
+                case 'x':
+                case 'f':
+                case 't':
+                case 'l':
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private static string GetMissingDescFallback(string magicKey, settings.skill.SkillSettingData.KMagicAttrib magicAttrib)
+        {
+            if (MissingDescWarnings.Add(magicAttrib.nAttribType))
+            {
+                UnityEngine.Debug.LogWarning(
+                    "MagicDesc missing. id=" + magicAttrib.nAttribType +
+                    " key=" + magicKey +
+                    " values=" + GetValueSummary(magicAttrib));
+            }
+
+            return string.Empty;
+        }
+
+        private static string GetValueSummary(settings.skill.SkillSettingData.KMagicAttrib magicAttrib)
+        {
+            int value0 = magicAttrib.nValue != null && magicAttrib.nValue.Length > 0 ? magicAttrib.nValue[0] : 0;
+            int value1 = magicAttrib.nValue != null && magicAttrib.nValue.Length > 1 ? magicAttrib.nValue[1] : 0;
+            int value2 = magicAttrib.nValue != null && magicAttrib.nValue.Length > 2 ? magicAttrib.nValue[2] : 0;
+            return value0 + "," + value1 + "," + value2;
+        }
+
+        private static string NormalizeRichMarkup(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return string.Empty;
+            }
+
+            value = Regex.Replace(
+                value,
+                "<c=([^>]+)>",
+                match => "<color=" + ResolveRichColor(match.Groups[1].Value) + ">",
+                RegexOptions.IgnoreCase);
+
+            value = Regex.Replace(
+                value,
+                "<color=([^>]+)>",
+                match => "<color=" + ResolveRichColor(match.Groups[1].Value) + ">",
+                RegexOptions.IgnoreCase);
+
+            value = Regex.Replace(value, "<c>", "</color>", RegexOptions.IgnoreCase);
+            value = Regex.Replace(value, "<color>", "</color>", RegexOptions.IgnoreCase);
+            return value;
+        }
+
+        private static string ResolveRichColor(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return "#ffffff";
+            }
+
+            string key = value.Trim().Trim('\'', '"').ToLowerInvariant();
+            if (key.StartsWith("#"))
+            {
+                return key;
+            }
+
+            if (key.StartsWith("0x"))
+            {
+                return "#" + key.Substring(2);
+            }
+
+            return key switch
+            {
+                "yellow" => "#ffff00",
+                "white" => "#ffffff",
+                "red" => "#ff0000",
+                "blue" => "#4aa3ff",
+                "green" => "#2ecc71",
+                "orange" => "#eabd0b",
+                "water" => "#66d9ff",
+                "teal" => "#00ffff",
+                _ => key
+            };
         }
 
         private static int ResolvePlaceholderValue(settings.skill.SkillSettingData.KMagicAttrib magicAttrib, char charValue)
@@ -509,7 +695,7 @@ normal_end
             };
         }
 
-        private static string ResolvePlaceholderText(char charDataType, char charAddType, int dataValue)
+        private static string ResolvePlaceholderText(char charDataType, char charValue, char charAddType, int dataValue)
         {
             switch (charDataType)
             {
@@ -530,17 +716,26 @@ normal_end
                     return dataValue >= 0 && dataValue < type.Length ? type[dataValue] : "loại " + dataValue;
 
                 case 'd':
+                    int displayValue = dataValue;
+                    bool wasNegative = dataValue < 0;
+                    string prefix = string.Empty;
+
                     if (charAddType == '+' || charAddType == '-')
                     {
-                        return (dataValue >= 0 ? "+" : "-") + Math.Abs(dataValue);
+                        prefix = dataValue >= 0 ? "+" : "-";
+                        displayValue = Math.Abs(dataValue);
                     }
-
-                    if (charAddType == '~')
+                    else if (charAddType == '~')
                     {
-                        return Math.Abs(dataValue).ToString();
+                        displayValue = Math.Abs(dataValue);
                     }
 
-                    return dataValue.ToString();
+                    if (wasNegative && displayValue == 1 && IsSecondValueSelector(charValue))
+                    {
+                        displayValue = 100;
+                    }
+
+                    return prefix + displayValue;
 
                 case 'x':
                     return dataValue != 0 ? "nữ" : "nam";
@@ -570,6 +765,11 @@ normal_end
                 default:
                     return string.Empty;
             }
+        }
+
+        private static bool IsSecondValueSelector(char charValue)
+        {
+            return charValue == '2' || charValue == '6' || charValue == '9';
         }
     }
 }

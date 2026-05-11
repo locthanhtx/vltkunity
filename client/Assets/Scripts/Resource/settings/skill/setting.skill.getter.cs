@@ -35,16 +35,19 @@ namespace game.resource.settings.skill
                 result += "\n";
             }
 
-            foreach (settings.skill.SkillSettingLevel.KMagicAttrib magicEntry in this.m_ImmediateAttribs)
-            {
-                result += settings.MagicDesc.Get(magicEntry);
-                result += "\n";
-            }
-
             foreach (settings.skill.SkillSettingLevel.KMagicAttrib magicEntry in this.m_DamageAttribs)
             {
-                result += settings.MagicDesc.Get(magicEntry);
-                result += "\n";
+                AppendMagicDesc(ref result, magicEntry);
+            }
+
+            foreach (settings.skill.SkillSettingLevel.KMagicAttrib magicEntry in this.m_ImmediateAttribs)
+            {
+                AppendMagicDesc(ref result, magicEntry);
+            }
+
+            foreach (settings.skill.SkillSettingLevel.KMagicAttrib magicEntry in this.m_StateAttribs)
+            {
+                AppendMagicDesc(ref result, magicEntry);
             }
 
             if (this.m_nEventSkillLevel > 0)
@@ -75,13 +78,24 @@ namespace game.resource.settings.skill
 
                     foreach (settings.skill.SkillSetting.KMagicAttrib magicEntry in skillEvent.m_DamageAttribs)
                     {
-                        result += settings.MagicDesc.Get(magicEntry);
-                        result += "\n";
+                        AppendMagicDesc(ref result, magicEntry);
                     }
                 }
             }
 
             return result;
+        }
+
+        private static void AppendMagicDesc(ref string result, settings.skill.SkillSettingLevel.KMagicAttrib magicEntry)
+        {
+            string desc = settings.MagicDesc.Get(magicEntry);
+            if (string.IsNullOrWhiteSpace(desc))
+            {
+                return;
+            }
+
+            result += desc;
+            result += "\n";
         }
 
         public string GetDescription()
