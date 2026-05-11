@@ -151,19 +151,17 @@ namespace game.scene
         private void OnDestroy()
         {
             CancelInvoke();
-            this.map.Release();
+            this.map?.Release();
         }
 
         public void CastSkill(int id, int level, game.resource.settings.NpcRes.Special TargetController, game.resource.settings.NpcRes.Special controller)
         {
-            Params.Cast castParams = new(TargetController, controller);
-            this.map.CastSkill(id, level, castParams);
+            this.CastSkill(id, level, controller, TargetController);
         }
 
         public void CastSkill(int id, int level, game.resource.settings.NpcRes.Normal TargetController, game.resource.settings.NpcRes.Special controller)
         {
-            Params.Cast castParams = new(controller, TargetController);
-            this.map.CastSkill(id, level, castParams);
+            this.CastSkill(id, level, controller, TargetController);
         }
 
         public void CastSkill(int id, int level, resource.settings.npcres.Controller launcher, resource.settings.npcres.Controller target)
@@ -173,7 +171,10 @@ namespace game.scene
                 return;
             }
 
-            this.map.CastSkill(id, level, launcher, target);
+            Params.Cast castParams = new(launcher, target);
+            castParams.launcher.SetMapPositionResolver(() => this.GetPreciseControllerMapPosition(launcher));
+            castParams.target.SetMapPositionResolver(() => this.GetPreciseControllerMapPosition(target));
+            this.map.CastSkill(id, level, castParams);
         }
 
         public void CastSkill(int id, int level, resource.settings.npcres.Controller launcher, resource.map.Position target)
@@ -183,7 +184,19 @@ namespace game.scene
                 return;
             }
 
-            this.map.CastSkill(id, level, launcher, target);
+            Params.Cast castParams = new(launcher, target);
+            castParams.launcher.SetMapPositionResolver(() => this.GetPreciseControllerMapPosition(launcher));
+            this.map.CastSkill(id, level, castParams);
+        }
+
+        private resource.map.Position GetPreciseControllerMapPosition(resource.settings.npcres.Controller controller)
+        {
+            if (controller == null)
+            {
+                return resource.map.Position.Zero;
+            }
+
+            return JxClassicMovement.ToMapPosition(this.GetControllerMpsPosition(controller));
         }
 
         ////////////////////////////////////////////////////////////////////////////////
@@ -588,7 +601,20 @@ namespace game.scene
         public void AddObj(resource.settings.objres.Controller obj) => this.map.AddObj(obj);
         public void RemoveObj(resource.settings.objres.Controller obj) => this.map.HideObj(obj);
 
-        public void RemoveNpc(game.resource.settings.npcres.Controller npc) => this.map.HideNpc(npc);
+        public void RemoveNpc(game.resource.settings.npcres.Controller npc)
+        {
+            if (npc == null || this.map == null)
+            {
+                return;
+            }
+
+            this.smoothMoves.Remove(npc);
+            this.classicMoves.Remove(npc);
+            this.classicResolvedDirections.Remove(npc);
+            this.preciseMpsPositions.Remove(npc);
+            npc.ClearDrivenFrame();
+            this.map.DestroyNpc(npc);
+        }
         public void UpdateNpc(game.resource.settings.npcres.Controller npc, int top, int left)
         {
             if (npc != null)

@@ -14,6 +14,7 @@ namespace game.scene
 {
     public class NpcManager : BaseMonoBehaviour, INpcClientListener
     {
+        private const float ClassicNpcSyncTimeoutSeconds = 6f;
         private Dictionary<int, game.resource.settings.NpcRes.Normal> Npcs = new Dictionary<int, game.resource.settings.NpcRes.Normal>();
         private Dictionary<int, game.resource.settings.objres.Controller> Objs = new Dictionary<int, game.resource.settings.objres.Controller>();
 
@@ -54,7 +55,13 @@ namespace game.scene
             foreach (var kvp in Npcs)
             {
                 game.resource.settings.NpcRes.Normal npc = kvp.Value;
-                var enemy = Utils.GetRelation(PlayerMain.instance, npc.GetAppearance().parent.GetComponent<NpcClick>());
+                NpcClick npcClick = npc.GetAppearance().parent.GetComponent<NpcClick>();
+                if (!IsNpcTargetable(npcClick))
+                {
+                    continue;
+                }
+
+                var enemy = Utils.GetRelation(PlayerMain.instance, npcClick);
 
                 if (enemy == NPCRELATION.relation_enemy)
                 {
@@ -93,7 +100,13 @@ namespace game.scene
             foreach (var kvp in Npcs)
             {
                 game.resource.settings.NpcRes.Normal npc = kvp.Value;
-                var enemy = Utils.GetRelation(PlayerMain.instance, npc.GetAppearance().parent.GetComponent<NpcClick>());
+                NpcClick npcClick = npc.GetAppearance().parent.GetComponent<NpcClick>();
+                if (!IsNpcTargetable(npcClick))
+                {
+                    continue;
+                }
+
+                var enemy = Utils.GetRelation(PlayerMain.instance, npcClick);
 
                 if (enemy == NPCRELATION.relation_enemy)
                 {
@@ -118,10 +131,19 @@ namespace game.scene
         /// </summary>
         void CheckNpcInsideAround()
         {
+            CheckClassicNpcSyncBalance();
+
             if (Npcs.ContainsKey(targetNormalID))
             {
                 if (targetNormalID > -1)
                 {
+                    NpcClick npcClick = Npcs[targetNormalID].GetAppearance().parent.GetComponent<NpcClick>();
+                    if (!IsNpcTargetable(npcClick))
+                    {
+                        targetNormalID = -1;
+                        return;
+                    }
+
                     Position mainPosition = PlayerMain.instance.controller.GetMapPosition();
                     double distance = mainPosition.CalculateDistance(Npcs[targetNormalID].GetMapPosition());
 
@@ -139,8 +161,20 @@ namespace game.scene
 
         public void NpcMouseUP(int id)
         {
+            NpcClick npcClick = FindNpc(id);
+            if (!IsNpcTargetable(npcClick))
+            {
+                return;
+            }
+
             targetNormalID = id;
             SellectNpc();
+        }
+
+        public void ClearTarget()
+        {
+            targetNormalID = -1;
+            ClearNpcSelection();
         }
 
         void SellectNpc()
@@ -150,9 +184,71 @@ namespace game.scene
                 NpcClick npcClick = normal.GetAppearance().parent.GetComponent<NpcClick>();
                 if (npcClick.Id == targetNormalID)
                 {
-                    npcClick.ChangeSelect(true);
+                    npcClick.ChangeSelect(IsNpcTargetable(npcClick));
                 }
                 else
+                {
+                    npcClick.ChangeSelect(false);
+                }
+            }
+        }
+
+        private void CheckClassicNpcSyncBalance()
+        {
+            float now = Time.time;
+            List<int> staleNpcIds = null;
+
+            foreach (KeyValuePair<int, game.resource.settings.NpcRes.Normal> pair in Npcs)
+            {
+                NpcClick npcClick = pair.Value?.GetAppearance()?.parent?.GetComponent<NpcClick>();
+                if (npcClick == null || npcClick.LastClassicSyncTime <= 0f)
+                {
+                    continue;
+                }
+
+                if (now - npcClick.LastClassicSyncTime <= ClassicNpcSyncTimeoutSeconds)
+                {
+                    continue;
+                }
+
+                if (npcClick.IsAlive)
+                {
+                    PhotonManager.Instance.ClassicClient?.RevalidateNpc(pair.Key);
+                    continue;
+                }
+
+                staleNpcIds ??= new List<int>();
+                staleNpcIds.Add(pair.Key);
+            }
+
+            if (staleNpcIds == null)
+            {
+                return;
+            }
+
+            foreach (int id in staleNpcIds)
+            {
+                Debug.Log("JxClassicClient stale npc cleanup id=" + id);
+                PhotonManager.Instance.ClassicClient?.ForgetNpcKnown(id);
+                DelNpc(id);
+            }
+        }
+
+        private static float GetClassicDeathRemoveDelay(NpcClick npcClick)
+        {
+            game.resource.settings.npcres.Controller controller = npcClick != null ? npcClick.GetController() : null;
+            int deathFrame = controller != null && controller.data.m_DeathFrame > 0
+                ? controller.data.m_DeathFrame
+                : 15;
+            return Mathf.Max(0.05f, deathFrame / game.network.jx.JxClassicMovement.CoreTickRate);
+        }
+
+        private void ClearNpcSelection()
+        {
+            foreach (NpcRes.Normal normal in Npcs.Values)
+            {
+                NpcClick npcClick = normal.GetAppearance().parent.GetComponent<NpcClick>();
+                if (npcClick != null)
                 {
                     npcClick.ChangeSelect(false);
                 }
@@ -185,12 +281,31 @@ namespace game.scene
                 return -1;
             }
 
+            NpcClick npcClick = Npcs[targetNormalID].GetAppearance().parent.GetComponent<NpcClick>();
+            if (!IsNpcTargetable(npcClick))
+            {
+                targetNormalID = -1;
+                FindEmmnyAround();
+                return targetNormalID;
+            }
+
             return targetNormalID;
+        }
+
+        public int GetCurrentTargetID()
+        {
+            if (targetNormalID <= -1 || !Npcs.ContainsKey(targetNormalID))
+            {
+                return -1;
+            }
+
+            NpcClick npcClick = Npcs[targetNormalID].GetAppearance().parent.GetComponent<NpcClick>();
+            return IsNpcTargetable(npcClick) ? targetNormalID : -1;
         }
 
         public game.resource.settings.NpcRes.Normal GetTargetController(int id)
         {
-            if (Npcs.ContainsKey(id))
+            if (Npcs.ContainsKey(id) && IsNpcTargetable(FindNpc(id)))
             {
                 return Npcs[id];
             }
@@ -203,9 +318,41 @@ namespace game.scene
         {
             if (Npcs.ContainsKey(id))
             {
+                if (targetNormalID == id)
+                {
+                    targetNormalID = -1;
+                }
+
                 _wordGame.RemoveNpc(Npcs[id]);
                 Npcs.Remove(id);
             }
+        }
+
+        public void MarkNpcAlive(int id)
+        {
+            NpcClick npcClick = FindNpc(id);
+            npcClick?.MarkAlive();
+        }
+
+        public void MarkNpcDead(int id, float removeDelaySeconds)
+        {
+            NpcClick npcClick = FindNpc(id);
+            if (npcClick == null)
+            {
+                return;
+            }
+
+            if (targetNormalID == id)
+            {
+                targetNormalID = -1;
+            }
+
+            npcClick.MarkDead(removeDelaySeconds);
+        }
+
+        public bool IsNpcAlive(int id)
+        {
+            return IsNpcTargetable(FindNpc(id));
         }
 
         public NpcClick FindNpc(int id)
@@ -214,6 +361,11 @@ namespace game.scene
                 return Npcs[id].GetAppearance().parent.GetComponent<NpcClick>();
             else
                 return null;
+        }
+
+        private static bool IsNpcTargetable(NpcClick npc)
+        {
+            return npc != null && npc.IsAlive;
         }
 
         public void UpdateNpc(game.resource.settings.npcres.Controller npcController, int top, int left)

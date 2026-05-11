@@ -56,6 +56,7 @@ public class MainCanvas : MonoBehaviour
 
     void Update()
     {
+        this.HandleWorldClickTargetClear();
         this.JoystickChange();
         this.SynInterval();
 
@@ -125,6 +126,11 @@ public class MainCanvas : MonoBehaviour
                 return;
             }
 
+            if (!isMove)
+            {
+                PhotonManager.Instance.NpcMgrs?.ClearTarget();
+            }
+
             isMove = true;
             PhotonManager.Instance.SetClassicLocalMovementActive(true);
             NpcAction.DoAction(world.GetMainPlayer(), NPCCMD.do_run);
@@ -182,6 +188,74 @@ public class MainCanvas : MonoBehaviour
                 //Debug.Log("KO SYNC DI CHUYEN");
             }
         }
+    }
+
+    private void HandleWorldClickTargetClear()
+    {
+        if (!TryGetPrimaryPointerDown(out Vector2 screenPosition, out int pointerId))
+        {
+            return;
+        }
+
+        if (IsPointerOverUI(pointerId))
+        {
+            return;
+        }
+
+        UnityEngine.Camera mainCamera = UnityEngine.Camera.main;
+        if (mainCamera == null)
+        {
+            return;
+        }
+
+        Vector3 worldPosition = mainCamera.ScreenToWorldPoint(screenPosition);
+        RaycastHit2D hit = Physics2D.Raycast(worldPosition, Vector2.zero);
+        if (hit.collider != null &&
+            (hit.collider.GetComponentInParent<NpcClick>() != null ||
+             hit.collider.GetComponentInParent<CharacterClick>() != null ||
+             hit.collider.GetComponentInParent<GameClickObj>() != null))
+        {
+            return;
+        }
+
+        PhotonManager.Instance?.ClearClassicCombatTarget(true);
+    }
+
+    private static bool TryGetPrimaryPointerDown(out Vector2 screenPosition, out int pointerId)
+    {
+        if (Input.touchCount > 0)
+        {
+            Touch touch = Input.GetTouch(0);
+            if (touch.phase == TouchPhase.Began)
+            {
+                screenPosition = touch.position;
+                pointerId = touch.fingerId;
+                return true;
+            }
+        }
+
+        if (Input.GetMouseButtonDown(0))
+        {
+            screenPosition = Input.mousePosition;
+            pointerId = -1;
+            return true;
+        }
+
+        screenPosition = Vector2.zero;
+        pointerId = -1;
+        return false;
+    }
+
+    private static bool IsPointerOverUI(int pointerId)
+    {
+        if (EventSystem.current == null)
+        {
+            return false;
+        }
+
+        return pointerId >= 0
+            ? EventSystem.current.IsPointerOverGameObject(pointerId)
+            : EventSystem.current.IsPointerOverGameObject();
     }
 
     private void SendStopMove()

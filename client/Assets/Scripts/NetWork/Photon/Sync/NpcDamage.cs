@@ -26,7 +26,7 @@ namespace Photon.ShareLibrary.Handlers
             else
             {
                 var npc = PhotonManager.Instance.NpcClientListener().FindNpc(id);
-                if (npc != null)
+                if (npc != null && npc.IsAlive)
                 {
                     NpcAction.DoDamage(npc.GetController(), damage);
                 }

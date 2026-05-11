@@ -16,7 +16,13 @@ namespace game.resource.settings
 		{
             this.self = this;
             this.map = map;
-            this.skillSetting = settings.skill.SkillSetting.Get(skillId, skillLevel);
+            this.skillSetting = settings.skill.SkillSetting.GetRuntimeBase(skillId, skillLevel);
+            if (this.skillSetting == null || this.skillSetting.m_nId <= 0)
+            {
+                UnityEngine.Debug.LogWarning("Skill runtime setting missing. skill=" + skillId + " level=" + skillLevel);
+                return;
+            }
+
             if (this.skillSetting != null && this.skillSetting.m_nChildSkillId > 0)
             {
                 this.missileSetting = settings.skill.MissileSetting.Get(this.skillSetting.m_nChildSkillId);

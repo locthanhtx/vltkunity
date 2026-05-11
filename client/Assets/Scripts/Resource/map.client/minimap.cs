@@ -109,6 +109,11 @@ namespace game.resource.map
 
         public void AddObject(settings.npcres.Controller npcController)
         {
+            if (npcController == null)
+            {
+                return;
+            }
+
             UnityEngine.Sprite dotSprite;
             Dictionary<settings.npcres.Controller, UnityEngine.GameObject> storage;
 
@@ -136,25 +141,54 @@ namespace game.resource.map
             storage[npcController] = goDot;
         }
 
+        public void RemoveObject(settings.npcres.Controller npcController)
+        {
+            if (npcController == null)
+            {
+                return;
+            }
+
+            RemoveObjectFromStorage(this.specialNpcPoints, npcController);
+            RemoveObjectFromStorage(this.normalNpcPoints, npcController);
+        }
+
+        private static void RemoveObjectFromStorage(
+            Dictionary<settings.npcres.Controller, UnityEngine.GameObject> storage,
+            settings.npcres.Controller npcController)
+        {
+            if (storage == null || !storage.TryGetValue(npcController, out UnityEngine.GameObject point))
+            {
+                return;
+            }
+
+            UnityEngine.GameObject.Destroy(point);
+            storage.Remove(npcController);
+        }
+
         public void SetMapPosition(settings.npcres.Controller npcController, resource.map.Position position)
         {
+            if (npcController == null || position == null)
+            {
+                return;
+            }
+
             UnityEngine.RectTransform obRect;
 
             if (npcController.IsSpecialNpc())
             {
-                if (specialNpcPoints.Count == 0)
+                if (!specialNpcPoints.TryGetValue(npcController, out UnityEngine.GameObject point))
                 {
                     return;
                 }
-                obRect = this.specialNpcPoints[npcController].GetComponent<UnityEngine.RectTransform>();
+                obRect = point.GetComponent<UnityEngine.RectTransform>();
             }
             else
             {
-                if (normalNpcPoints.Count == 0)
+                if (!normalNpcPoints.TryGetValue(npcController, out UnityEngine.GameObject point))
                 {
                     return;
                 }
-                obRect = this.normalNpcPoints[npcController].GetComponent<UnityEngine.RectTransform>();
+                obRect = point.GetComponent<UnityEngine.RectTransform>();
             }
 
             obRect.anchoredPosition = new UnityEngine.Vector2(

@@ -33,11 +33,29 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
     private const float ClassicNpcNormalSyncDuration = 0.22f;
     private const float ClassicRunEchoIgnoreSeconds = 0.35f;
     private const float ClassicSkillMinSendInterval = 0.16f;
-    private const float ClassicSkillMaxSendInterval = 0.75f;
+    private const float ClassicSkillApproachResendInterval = 0.28f;
+    private const float ClassicSkillApproachTimeout = 5f;
+    private const int ClassicAttackRadiusOffset = 50;
+    private const int ClassicMinAttackReadyRadius = 32;
+    private const int ClassicDefaultDeathFrame = 15;
+    private const int ClassicRangeWeaponEqtOffset = 100;
+    private const int ClassicWeaponEquipPart = 3;
+    private const int ClassicMeleeWeaponHandParticular = 6;
     private bool classicLocalMovementActive;
     private float classicRunEchoIgnoreUntil;
     private float nextClassicSkillSendTime;
+    private PendingClassicSkillCast pendingClassicSkillCast;
     private readonly HashSet<string> classicSkillRenderWarnings = new();
+
+    private sealed class PendingClassicSkillCast
+    {
+        public int SkillId;
+        public int SkillLevel;
+        public int TargetId;
+        public float ExpiresAt;
+        public float NextMoveSendTime;
+        public bool AutoRepeat;
+    }
 
     [SerializeField]
     private bool usePhotonServer = false;
@@ -182,9 +200,25 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
     public void SetClassicLocalMovementActive(bool active)
     {
         classicLocalMovementActive = active;
+        if (active)
+        {
+            CancelClassicAutoSkillCast();
+        }
+
         if (!active)
         {
             classicRunEchoIgnoreUntil = Time.time + ClassicRunEchoIgnoreSeconds;
+        }
+    }
+
+    public void ClearClassicCombatTarget(bool stopMainSkillAction)
+    {
+        CancelClassicAutoSkillCast();
+        NpcMgrs?.ClearTarget();
+
+        if (stopMainSkillAction)
+        {
+            StopClassicMainSkillAction();
         }
     }
 
@@ -294,6 +328,7 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
     void Update()
     {
         ProcessClassicWorldEvents();
+        ProcessPendingClassicSkillCast();
 
         if (this.client == null)
             return;
@@ -352,6 +387,10 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
 
                     case ClassicWorldEventType.ActorCommandSync:
                         ApplyClassicActorCommandSync(worldEvent.Command);
+                        break;
+
+                    case ClassicWorldEventType.NpcRemoveSync:
+                        ApplyClassicNpcRemoveSync(worldEvent.RemoveNpcId, worldEvent.RemoveNpcRegion);
                         break;
 
                     case ClassicWorldEventType.PlayerAttributeSync:
@@ -867,8 +906,8 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
             return;
         }
 
-        int hpMax = Math.Max(1, sync.CurrentLifeMax > 0 ? sync.CurrentLifeMax : sync.MaxLife);
-        int hpCur = Math.Max(1, sync.CurrentLife > 0 ? sync.CurrentLife : hpMax);
+        int hpCur = Math.Max(0, sync.CurrentLife);
+        int hpMax = ResolveClassicNpcHpMax(sync, hpCur);
         byte level = (byte)Math.Max(1, Math.Min(255, sync.Level));
         NPCSERIES series = (NPCSERIES)Math.Max(0, Math.Min((int)NPCSERIES.series_earth, (int)sync.Series));
         NPCCAMP camp = (NPCCAMP)Math.Max(0, Math.Min((int)NPCCAMP.camp_num - 1, (int)sync.CurrentCamp));
@@ -895,6 +934,7 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
                   " setting=" + sync.NpcSettingIndex +
                   " npcType=" + npcType +
                   " kind=" + sync.Kind +
+                  " life=" + hpCur + "/" + hpMax +
                   " mapX=" + sync.MapX +
                   " mapY=" + sync.MapY +
                   " name=" + sync.Name);
@@ -974,6 +1014,8 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
 
         if (sync.MapX > 0 && sync.MapY > 0)
         {
+            MapX = sync.MapX;
+            MapY = sync.MapY;
             player.controller.SetMapPosition(sync.MapY / 2, sync.MapX);
         }
 
@@ -1278,17 +1320,83 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
             return;
         }
 
+        bool syncSaysDead = sync.Doing == (byte)NPCCMD.do_death ||
+                            (sync.CurrentLife <= 0 && sync.Doing != (byte)NPCCMD.do_revive);
+        bool syncSaysAlive = sync.CurrentLife > 0 || sync.Doing == (byte)NPCCMD.do_revive;
+
+        if (syncSaysDead)
+        {
+            npc.MarkClassicSynced();
+            if (sync.CurrentLifeMax > 0 || sync.MaxLife > 0)
+            {
+                npc.CurrentHPMax = ResolveClassicNpcHpMax(sync, npc.CurrentHPMax);
+            }
+
+            int previousLife = npc.CurrentHPCur;
+            npc.CurrentHPCur = 0;
+            if (previousLife > 0)
+            {
+                NpcAction.DoDamage(npc.GetController(), previousLife);
+            }
+
+            ApplyClassicNpcDeath(npc);
+            return;
+        }
+
+        if (npc.IsDead && !syncSaysAlive)
+        {
+            return;
+        }
+
+        npc.MarkClassicSynced();
+
         if (sync.CurrentLifeMax > 0 || sync.MaxLife > 0)
         {
-            npc.CurrentHPMax = Math.Max(1, sync.CurrentLifeMax > 0 ? sync.CurrentLifeMax : sync.MaxLife);
+            npc.CurrentHPMax = ResolveClassicNpcHpMax(sync, npc.CurrentHPMax);
         }
 
-        if (sync.CurrentLife > 0)
+        // Server can send negative life on overkill; client should clamp it to death.
+        int oldLife = npc.CurrentHPCur;
+        int newLife = Math.Max(0, sync.CurrentLife);
+        npc.CurrentHPCur = newLife;
+        if (oldLife != newLife)
         {
-            npc.CurrentHPCur = Math.Max(1, sync.CurrentLife);
+            Debug.Log("JxClassicClient << npc hp id=" + npc.Id +
+                      " old=" + oldLife +
+                      " new=" + newLife +
+                      " max=" + npc.CurrentHPMax +
+                      " mps=(" + sync.MapX + "," + sync.MapY + ")");
         }
+
+        if (oldLife > newLife)
+        {
+            NpcAction.DoDamage(npc.GetController(), oldLife - newLife);
+        }
+
+        if (newLife <= 0)
+        {
+            ApplyClassicNpcDeath(npc);
+            return;
+        }
+
+        npc.MarkAlive();
 
         ApplyClassicControllerRuntimeState(npc.GetController(), sync, direction);
+    }
+
+    private static int ResolveClassicNpcHpMax(ClassicNpcSync sync, int fallbackCurrentLife = 0)
+    {
+        if (sync == null)
+        {
+            return Math.Max(1, fallbackCurrentLife);
+        }
+
+        int hpMax = sync.CurrentLifeMax > 0
+            ? sync.CurrentLifeMax
+            : sync.MaxLife > 0
+                ? sync.MaxLife
+                : fallbackCurrentLife;
+        return Math.Max(1, hpMax);
     }
 
     private static void ApplyClassicPlayerVitals(CharacterClick player, ClassicNpcSync sync)
@@ -1432,6 +1540,10 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
             game.resource.settings.npcres.Controller mainPlayer = world.GetMainPlayer();
             if (mainPlayer != null)
             {
+                if (command == NPCCMD.do_death)
+                {
+                    world.StopMainPlayerMove();
+                }
                 NpcAction.DoAction(mainPlayer, command);
             }
 
@@ -1445,6 +1557,11 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         CharacterClick player = CharMgrs.FindPlayer(sync.Id);
         if (player != null && player.controller != null)
         {
+            if (command == NPCCMD.do_death)
+            {
+                world?.StopNpcMove(player.controller);
+            }
+
             NpcAction.DoAction(player.controller, command);
             if (command == NPCCMD.do_death)
             {
@@ -1456,12 +1573,114 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         NpcClick npc = NpcMgrs.FindNpc(sync.Id);
         if (npc != null && npc.GetController() != null)
         {
-            NpcAction.DoAction(npc.GetController(), command);
+            npc.MarkClassicSynced();
+
+            if (command == NPCCMD.do_revive && (sync.CommandParam == 0 || sync.CommandParam == 1))
+            {
+                StopClassicSkillForTarget(sync.Id);
+                ClassicClient?.ForgetNpcKnown(sync.Id);
+                NpcMgrs.DelNpc(sync.Id);
+                return;
+            }
+
             if (command == NPCCMD.do_death)
             {
-                npc.CurrentHPCur = 0;
+                ApplyClassicNpcDeath(npc);
+                return;
             }
+
+            NpcAction.DoAction(npc.GetController(), command);
         }
+    }
+
+    private void ApplyClassicNpcRemoveSync(int npcId, bool removeRegion)
+    {
+        if (npcId == 0)
+        {
+            return;
+        }
+
+        ClassicClient?.ForgetNpcKnown(npcId);
+
+        if (npcId == PlayerId)
+        {
+            world?.StopMainPlayerMove();
+            return;
+        }
+
+        if (CharMgrs != null && CharMgrs.FindPlayer(npcId) != null)
+        {
+            StopClassicSkillForTarget(npcId);
+            Debug.Log("JxClassicClient << npc remove player id=" + npcId + " rv=" + removeRegion);
+            CharMgrs.DelPlayer(npcId);
+            return;
+        }
+
+        if (NpcMgrs != null && NpcMgrs.FindNpc(npcId) != null)
+        {
+            StopClassicSkillForTarget(npcId);
+            Debug.Log("JxClassicClient << npc remove id=" + npcId + " rv=" + removeRegion);
+            NpcMgrs.DelNpc(npcId);
+            return;
+        }
+
+        Debug.Log("JxClassicClient << npc remove missing id=" + npcId + " rv=" + removeRegion);
+    }
+
+    private void ApplyClassicNpcDeath(NpcClick npc)
+    {
+        if (npc == null)
+        {
+            return;
+        }
+
+        StopClassicSkillForTarget(npc.Id);
+        ClassicClient?.ForgetNpcKnown(npc.Id);
+
+        game.resource.settings.npcres.Controller controller = npc.GetController();
+        if (controller != null)
+        {
+            world?.StopNpcMove(controller);
+            NpcAction.DoAction(controller, NPCCMD.do_death);
+        }
+
+        NpcMgrs?.MarkNpcDead(npc.Id, GetClassicDeathRemoveDelay(controller));
+    }
+
+    private void StopClassicSkillForTarget(int targetId)
+    {
+        if (pendingClassicSkillCast != null && pendingClassicSkillCast.TargetId == targetId)
+        {
+            pendingClassicSkillCast = null;
+        }
+
+        StopClassicMainSkillAction();
+    }
+
+    private void StopClassicMainSkillAction()
+    {
+        game.resource.settings.npcres.Controller mainPlayer = world != null ? world.GetMainPlayer() : null;
+        if (mainPlayer == null || classicLocalMovementActive)
+        {
+            return;
+        }
+
+        int doing = (int)mainPlayer.data.m_Doing;
+        if (doing == (int)NPCCMD.do_skill ||
+            doing == (int)NPCCMD.do_magic ||
+            doing == (int)NPCCMD.do_attack)
+        {
+            world.StopMainPlayerMove();
+            NpcAction.DoAction(mainPlayer, NPCCMD.do_stand);
+        }
+    }
+
+    private static float GetClassicDeathRemoveDelay(game.resource.settings.npcres.Controller controller)
+    {
+        int deathFrame = controller != null && controller.data.m_DeathFrame > 0
+            ? controller.data.m_DeathFrame
+            : ClassicDefaultDeathFrame;
+        return Mathf.Max(0.05f, deathFrame / JxClassicMovement.CoreTickRate);
     }
 
     private void ApplyClassicSkillCastSync(ClassicSkillCastSync sync)
@@ -1483,6 +1702,16 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
             caster.SyncDirection(direction);
         }
 
+        game.resource.settings.skill.SkillSetting skillSetting = null;
+        try
+        {
+            skillSetting = game.resource.settings.skill.SkillSetting.GetRuntimeBase(sync.SkillId, Math.Max(1, sync.SkillLevel));
+        }
+        catch (Exception)
+        {
+        }
+
+        LogClassicSkillPacket("JxClassicClient << server skill", sync.SkillId, sync.SkillLevel, sync.MpsX, sync.MpsY, skillSetting);
         ApplyClassicSkillAnimation(caster, sync.SkillId, sync.SkillLevel);
         RenderClassicSkill(sync.SkillId, sync.SkillLevel, caster, sync.MpsX, sync.MpsY, "server");
     }
@@ -1491,17 +1720,30 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
     {
         if (id == PlayerId)
         {
-            return world != null ? world.GetMainPlayer() : null;
+            game.resource.settings.npcres.Controller mainPlayer = world != null ? world.GetMainPlayer() : null;
+            return IsClassicControllerAlive(mainPlayer) ? mainPlayer : null;
         }
 
         CharacterClick player = CharMgrs != null ? CharMgrs.FindPlayer(id) : null;
         if (player != null && player.controller != null)
         {
-            return player.controller;
+            return IsClassicControllerAlive(player.controller) ? player.controller : null;
         }
 
         NpcClick npc = NpcMgrs != null ? NpcMgrs.FindNpc(id) : null;
-        return npc != null ? npc.GetController() : null;
+        return npc != null && npc.IsAlive ? npc.GetController() : null;
+    }
+
+    private static bool IsClassicControllerAlive(game.resource.settings.npcres.Controller controller)
+    {
+        if (controller == null)
+        {
+            return false;
+        }
+
+        game.resource.settings.npcres.Datafield.NPCCMD doing = controller.data.m_Doing;
+        return doing != game.resource.settings.npcres.Datafield.NPCCMD.do_death &&
+               doing != game.resource.settings.npcres.Datafield.NPCCMD.do_revive;
     }
 
     private int ResolveClassicSkillDirection(
@@ -1537,7 +1779,7 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         try
         {
             game.resource.settings.skill.SkillSetting skillSetting =
-                game.resource.settings.skill.SkillSetting.Get(skillId, Math.Max(1, skillLevel));
+                game.resource.settings.skill.SkillSetting.GetRuntimeBase(skillId, Math.Max(1, skillLevel));
             if (skillSetting != null &&
                 skillSetting.m_nCharActionId == game.resource.settings.skill.Defination.CLIENTACTION.cdo_magic)
             {
@@ -1567,30 +1809,37 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
 
         if (sync.Id == PlayerId)
         {
+            game.resource.settings.npcres.Controller mainPlayer = world != null ? world.GetMainPlayer() : null;
+            if (!IsClassicControllerAlive(mainPlayer))
+            {
+                return;
+            }
+
+            MapX = sync.MapX;
+            MapY = sync.MapY;
+
             bool ignoreRunEcho = IsClassicMovingPositionSync(sync) &&
                                  !classicLocalMovementActive &&
                                  Time.time < classicRunEchoIgnoreUntil;
 
             if (classicLocalMovementActive)
             {
-                MapX = sync.MapX;
-                MapY = sync.MapY;
                 return;
             }
 
             if (ignoreRunEcho)
             {
-                NpcAction.DoAction(world.GetMainPlayer(), NPCCMD.do_stand);
+                NpcAction.DoAction(mainPlayer, NPCCMD.do_stand);
                 return;
             }
 
-            JxClassicMovement.EnsureBaseSpeed(world.GetMainPlayer());
-            ApplyClassicMoveState(world.GetMainPlayer(), top, left, sync);
-            int moveDirection = ResolveClassicSyncDirection(world.GetMainPlayer(), top, left, sync);
+            JxClassicMovement.EnsureBaseSpeed(mainPlayer);
+            ApplyClassicMoveState(mainPlayer, top, left, sync);
+            int moveDirection = ResolveClassicSyncDirection(mainPlayer, top, left, sync);
 
             int moveSpeed = sync.IsRunning
-                ? JxClassicMovement.NormalizeRunSpeed(Math.Max(ClassicRunSpeed, JxClassicMovement.GetCurrentRunSpeed(world.GetMainPlayer())))
-                : JxClassicMovement.NormalizeWalkSpeed(Math.Max(ClassicWalkSpeed, JxClassicMovement.GetCurrentWalkSpeed(world.GetMainPlayer())));
+                ? JxClassicMovement.NormalizeRunSpeed(Math.Max(ClassicRunSpeed, JxClassicMovement.GetCurrentRunSpeed(mainPlayer)))
+                : JxClassicMovement.NormalizeWalkSpeed(Math.Max(ClassicWalkSpeed, JxClassicMovement.GetCurrentWalkSpeed(mainPlayer)));
             if (IsClassicMovingPositionSync(sync))
             {
                 world.MoveMainPlayerToClassicMps(sync.MapX, sync.MapY, moveSpeed, 768, moveDirection, sync.IsRunning);
@@ -1604,8 +1853,6 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
                     384,
                     false);
             }
-            MapX = sync.MapX;
-            MapY = sync.MapY;
             return;
         }
 
@@ -1613,6 +1860,11 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         if (player != null)
         {
             if (player.controller == null)
+            {
+                return;
+            }
+
+            if (!IsClassicControllerAlive(player.controller))
             {
                 return;
             }
@@ -1663,6 +1915,13 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         NpcClick npc = NpcMgrs.FindNpc(sync.Id);
         if (npc != null)
         {
+            npc.MarkClassicSynced();
+
+            if (!npc.IsAlive)
+            {
+                return;
+            }
+
             JxClassicMovement.EnsureBaseSpeed(npc.GetController());
             ApplyClassicMoveState(npc.GetController(), top, left, sync);
             int moveDirection = ResolveClassicSyncDirection(npc.GetController(), top, left, sync);
@@ -1899,6 +2158,7 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         switch (operationCode)
         {
             case OperationCode.DoMove:
+                CancelClassicAutoSkillCast();
                 if (parameters == null ||
                     !parameters.TryGetValue((byte)ParamterCode.MapX, out object mapXValue) ||
                     !parameters.TryGetValue((byte)ParamterCode.MapY, out object mapYValue))
@@ -1919,6 +2179,7 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
                 return true;
 
             case OperationCode.StopMove:
+                CancelClassicAutoSkillCast();
                 if (parameters != null &&
                     parameters.TryGetValue((byte)ParamterCode.MapX, out object stopMapXValue) &&
                     parameters.TryGetValue((byte)ParamterCode.MapY, out object stopMapYValue))
@@ -1943,15 +2204,6 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
                 {
                     skillLevel = Math.Max(1, Convert.ToInt32(skillLevelValue));
                 }
-
-                if (Time.time < nextClassicSkillSendTime)
-                {
-                    return true;
-                }
-
-                PrepareClassicRideStateForSkill(skillId, skillLevel);
-
-                nextClassicSkillSendTime = Time.time + GetClassicSkillSendInterval(skillId, skillLevel);
 
                 int skillMpsX = -1;
                 int skillMpsY = PlayerId;
@@ -1979,11 +2231,35 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
                     skillMpsY = skillTargetId;
                 }
 
+                if (Time.time < nextClassicSkillSendTime)
+                {
+                    return true;
+                }
+
+                if (!TryValidateClassicSkillCast(
+                        skillId,
+                        skillLevel,
+                        skillMpsX,
+                        skillMpsY,
+                        out game.resource.settings.skill.SkillSetting skillSetting))
+                {
+                    return true;
+                }
+
+                if (IsClassicAutoSkillTarget(skillSetting, skillMpsX, skillMpsY))
+                {
+                    StartClassicAutoSkillCast(skillSetting, skillLevel, skillMpsY);
+                }
+                else
+                {
+                    CancelClassicAutoSkillCast();
+                }
+
+                nextClassicSkillSendTime = Time.time + GetClassicSkillSendInterval(skillSetting);
+
                 FireAndForgetClassicSend(ClassicClient.SendNpcSkillAsync(skillId, skillMpsX, skillMpsY));
                 PreviewClassicNpcSkill(skillId, skillLevel, skillTargetId, hasMapTarget, skillMpsX, skillMpsY);
-                Debug.Log("JxClassicClient >> npc skill id=" + skillId +
-                          " x=" + skillMpsX +
-                          " y=" + skillMpsY);
+                LogClassicSkillPacket("JxClassicClient >> npc skill", skillId, skillLevel, skillMpsX, skillMpsY, skillSetting);
                 return true;
 
             case OperationCode.AutoEquip:
@@ -2036,59 +2312,522 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         Debug.Log("JxClassicClient >> npc ride toggle");
     }
 
-    private void PrepareClassicRideStateForSkill(int skillId, int skillLevel)
+    private void CancelClassicAutoSkillCast()
     {
-        if (PlayerMain.instance == null || skillId <= 0)
+        pendingClassicSkillCast = null;
+    }
+
+    private static bool IsClassicAutoSkillTarget(
+        game.resource.settings.skill.SkillSetting skillSetting,
+        int mpsX,
+        int mpsY)
+    {
+        if (skillSetting == null || mpsX >= 0 || mpsY <= 0)
+        {
+            return false;
+        }
+
+        if (PhotonManager.Instance != null && mpsY == PhotonManager.Instance.PlayerId)
+        {
+            return false;
+        }
+
+        return skillSetting.m_bTargetOnly != 0 ||
+               skillSetting.m_bTargetEnemy != 0 ||
+               skillSetting.m_bTargetAlly != 0;
+    }
+
+    private void StartClassicAutoSkillCast(
+        game.resource.settings.skill.SkillSetting skillSetting,
+        int skillLevel,
+        int targetId)
+    {
+        pendingClassicSkillCast = new PendingClassicSkillCast
+        {
+            SkillId = skillSetting.m_nId,
+            SkillLevel = Math.Max(1, skillLevel),
+            TargetId = targetId,
+            ExpiresAt = float.PositiveInfinity,
+            NextMoveSendTime = 0f,
+            AutoRepeat = true
+        };
+    }
+
+    private void LogClassicSkillPacket(
+        string prefix,
+        int skillId,
+        int skillLevel,
+        int mpsX,
+        int mpsY,
+        game.resource.settings.skill.SkillSetting skillSetting)
+    {
+        string mode = "point";
+        string targetText = string.Empty;
+        string playerText = string.Empty;
+
+        if (world != null && world.GetMainPlayer() != null)
+        {
+            Vector2 clientPlayerMps = world.GetMainPlayerMpsPosition();
+            Vector2 serverPlayerMps = GetClassicMainPlayerServerMpsPosition();
+            int serverDelta = Mathf.RoundToInt(Vector2.Distance(clientPlayerMps, serverPlayerMps));
+            playerText = " clientPlayerMps=(" + Mathf.RoundToInt(clientPlayerMps.x) + "," + Mathf.RoundToInt(clientPlayerMps.y) + ")" +
+                         " serverPlayerMps=(" + Mathf.RoundToInt(serverPlayerMps.x) + "," + Mathf.RoundToInt(serverPlayerMps.y) + ")" +
+                         " clientServerDelta=" + serverDelta;
+
+            if (mpsX < 0 && mpsY > 0)
+            {
+                mode = mpsY == PlayerId ? "self" : "target";
+                game.resource.settings.npcres.Controller target = FindClassicController(mpsY);
+                if (target != null)
+                {
+                    Vector2 targetMps = world.GetNpcMpsPosition(target);
+                    int clientDistance = Mathf.RoundToInt(Vector2.Distance(clientPlayerMps, targetMps));
+                    int serverDistance = Mathf.RoundToInt(Vector2.Distance(serverPlayerMps, targetMps));
+                    int readyRadius = GetClassicSkillReadyRadius(skillSetting);
+                    targetText = " target=" + mpsY +
+                                 " targetMps=(" + Mathf.RoundToInt(targetMps.x) + "," + Mathf.RoundToInt(targetMps.y) + ")" +
+                                 " clientDistance=" + clientDistance +
+                                 " serverDistance=" + serverDistance +
+                                 " readyRadius=" + readyRadius;
+                }
+                else
+                {
+                    targetText = " target=" + mpsY + " targetMissing=1";
+                }
+            }
+            else if (mpsX > 0 || mpsY > 0)
+            {
+                Vector2 targetMps = new(mpsX, mpsY);
+                int clientDistance = Mathf.RoundToInt(Vector2.Distance(clientPlayerMps, targetMps));
+                int serverDistance = Mathf.RoundToInt(Vector2.Distance(serverPlayerMps, targetMps));
+                targetText = " targetMps=(" + mpsX + "," + mpsY + ")" +
+                             " clientDistance=" + clientDistance +
+                             " serverDistance=" + serverDistance;
+            }
+        }
+
+        Debug.Log(prefix +
+                  " id=" + skillId +
+                  " level=" + skillLevel +
+                  " mode=" + mode +
+                  " x=" + mpsX +
+                  " y=" + mpsY +
+                  playerText +
+                  targetText);
+    }
+
+    private bool TryValidateClassicSkillCast(
+        int skillId,
+        int skillLevel,
+        int mpsX,
+        int mpsY,
+        out game.resource.settings.skill.SkillSetting skillSetting)
+    {
+        skillSetting = null;
+        if (skillId <= 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            skillSetting = game.resource.settings.skill.SkillSetting.GetRuntimeBase(skillId, Math.Max(1, skillLevel));
+            if (skillSetting == null || skillSetting.m_nId <= 0)
+            {
+                Debug.LogWarning("JxClassicClient skill blocked. setting missing skill=" + skillId +
+                                 " level=" + skillLevel);
+                return false;
+            }
+
+            if (!ValidateClassicSkillHorse(skillSetting))
+            {
+                return false;
+            }
+
+            if (!ValidateClassicSkillEquipment(skillSetting))
+            {
+                return false;
+            }
+
+            if (!ValidateClassicSkillCost(skillSetting))
+            {
+                return false;
+            }
+
+            if (!ValidateClassicSkillTargetRange(skillSetting, skillLevel, mpsX, mpsY))
+            {
+                return false;
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning("JxClassicClient skill blocked. skill=" + skillId +
+                             " level=" + skillLevel +
+                             " error=" + ex.GetBaseException().Message);
+            return false;
+        }
+    }
+
+    private static bool ValidateClassicSkillHorse(game.resource.settings.skill.SkillSetting skillSetting)
+    {
+        if (skillSetting == null || PlayerMain.instance == null)
+        {
+            return true;
+        }
+
+        bool isRiding = PlayerMain.instance.IsUseHorse;
+        if (skillSetting.m_nHorseLimited == 1 && isRiding)
+        {
+            Debug.LogWarning("JxClassicClient skill blocked by horse. skill=" + skillSetting.m_nId +
+                             " horseLimit=1 riding=" + isRiding);
+            return false;
+        }
+
+        if (skillSetting.m_nHorseLimited == 2 && !isRiding)
+        {
+            Debug.LogWarning("JxClassicClient skill blocked by horse. skill=" + skillSetting.m_nId +
+                             " horseLimit=2 riding=" + isRiding);
+            return false;
+        }
+
+        return skillSetting.m_nHorseLimited == 0 ||
+               skillSetting.m_nHorseLimited == 1 ||
+               skillSetting.m_nHorseLimited == 2;
+    }
+
+    private bool ValidateClassicSkillEquipment(game.resource.settings.skill.SkillSetting skillSetting)
+    {
+        if (skillSetting == null || skillSetting.m_nEquiptLimited == -2)
+        {
+            return true;
+        }
+
+        int currentWeaponLimit = ResolveClassicCurrentWeaponLimit(out string weaponDescription);
+        if (currentWeaponLimit == skillSetting.m_nEquiptLimited)
+        {
+            return true;
+        }
+
+        Debug.LogWarning("JxClassicClient skill blocked by weapon. skill=" + skillSetting.m_nId +
+                         " eqtLimit=" + skillSetting.m_nEquiptLimited +
+                         " current=" + currentWeaponLimit +
+                         " weapon=" + weaponDescription);
+        return false;
+    }
+
+    private int ResolveClassicCurrentWeaponLimit(out string weaponDescription)
+    {
+        weaponDescription = "bare-hand";
+
+        foreach (ItemData item in playerItems.Values)
+        {
+            if (item == null ||
+                item.Local != (byte)ItemPosition.pos_equip ||
+                item.Equipclasscode != (byte)game.resource.settings.item.Defination.Genre.item_equip)
+            {
+                continue;
+            }
+
+            int detail = item.Detailtype;
+            if (item.X != ClassicWeaponEquipPart &&
+                detail != (int)game.resource.settings.item.Defination.Detail.equip_meleeweapon &&
+                detail != (int)game.resource.settings.item.Defination.Detail.equip_rangeweapon)
+            {
+                continue;
+            }
+
+            if (detail != (int)game.resource.settings.item.Defination.Detail.equip_meleeweapon &&
+                detail != (int)game.resource.settings.item.Defination.Detail.equip_rangeweapon)
+            {
+                continue;
+            }
+
+            if (item.Durability == 0)
+            {
+                weaponDescription = "broken id=" + item.id +
+                                    " detail=" + detail +
+                                    " particular=" + item.Particulartype;
+                return -1;
+            }
+
+            int particular = item.Particulartype;
+            if (detail == (int)game.resource.settings.item.Defination.Detail.equip_meleeweapon)
+            {
+                if (particular == ClassicMeleeWeaponHandParticular)
+                {
+                    particular = -1;
+                }
+
+                weaponDescription = "melee id=" + item.id +
+                                    " particular=" + item.Particulartype +
+                                    " resolved=" + particular;
+                return particular;
+            }
+
+            int resolvedRange = particular + ClassicRangeWeaponEqtOffset;
+            weaponDescription = "range id=" + item.id +
+                                " particular=" + particular +
+                                " resolved=" + resolvedRange;
+            return resolvedRange;
+        }
+
+        return -1;
+    }
+
+    private static bool ValidateClassicSkillCost(game.resource.settings.skill.SkillSetting skillSetting)
+    {
+        if (skillSetting == null || skillSetting.m_nCost <= 0 || PlayerMain.instance == null)
+        {
+            return true;
+        }
+
+        int currentValue = skillSetting.m_nSkillCostType switch
+        {
+            game.resource.settings.skill.Defination.NPCATTRIB.attrib_mana => PlayerMain.instance.MPCur,
+            game.resource.settings.skill.Defination.NPCATTRIB.attrib_stamina => PlayerMain.instance.SPCur,
+            game.resource.settings.skill.Defination.NPCATTRIB.attrib_life => PlayerMain.instance.HPCur,
+            _ => int.MaxValue
+        };
+
+        if (currentValue - skillSetting.m_nCost > 0)
+        {
+            return true;
+        }
+
+        Debug.LogWarning("JxClassicClient skill blocked by cost. skill=" + skillSetting.m_nId +
+                         " costType=" + skillSetting.m_nSkillCostType +
+                         " cost=" + skillSetting.m_nCost +
+                         " current=" + currentValue);
+        return false;
+    }
+
+    private bool ValidateClassicSkillTargetRange(
+        game.resource.settings.skill.SkillSetting skillSetting,
+        int skillLevel,
+        int mpsX,
+        int mpsY)
+    {
+        if (skillSetting == null)
+        {
+            return true;
+        }
+
+        bool hasTargetId = mpsX < 0 && mpsY > 0;
+        if (!hasTargetId)
+        {
+            if (skillSetting.m_bTargetOnly != 0)
+            {
+                Debug.LogWarning("JxClassicClient skill blocked. target required skill=" + skillSetting.m_nId +
+                                 " x=" + mpsX +
+                                 " y=" + mpsY);
+                return false;
+            }
+
+            return true;
+        }
+
+        if (mpsY == PlayerId)
+        {
+            return true;
+        }
+
+        if (skillSetting.m_bTargetOnly == 0 &&
+            skillSetting.m_bTargetEnemy == 0 &&
+            skillSetting.m_bTargetAlly == 0)
+        {
+            return true;
+        }
+
+        if (world == null || world.GetMainPlayer() == null)
+        {
+            return false;
+        }
+
+        game.resource.settings.npcres.Controller target = FindClassicController(mpsY);
+        if (target == null)
+        {
+            Debug.LogWarning("JxClassicClient skill blocked. target missing skill=" + skillSetting.m_nId +
+                             " target=" + mpsY);
+            return false;
+        }
+
+        float distance = Vector2.Distance(GetClassicMainPlayerServerMpsPosition(), world.GetNpcMpsPosition(target));
+        int readyRadius = GetClassicSkillReadyRadius(skillSetting);
+        if (distance <= readyRadius)
+        {
+            return true;
+        }
+
+        BeginClassicSkillApproach(skillSetting, Math.Max(1, skillLevel), mpsY, target, distance, readyRadius);
+        return false;
+    }
+
+    private static int GetClassicSkillReadyRadius(game.resource.settings.skill.SkillSetting skillSetting)
+    {
+        int attackRadius = skillSetting != null && skillSetting.m_nAttackRadius > 0
+            ? skillSetting.m_nAttackRadius
+            : ClassicMinAttackReadyRadius;
+        return Math.Max(ClassicMinAttackReadyRadius, attackRadius - ClassicAttackRadiusOffset);
+    }
+
+    private void BeginClassicSkillApproach(
+        game.resource.settings.skill.SkillSetting skillSetting,
+        int skillLevel,
+        int targetId,
+        game.resource.settings.npcres.Controller target,
+        float distance,
+        int readyRadius)
+    {
+        pendingClassicSkillCast = new PendingClassicSkillCast
+        {
+            SkillId = skillSetting.m_nId,
+            SkillLevel = Math.Max(1, skillLevel),
+            TargetId = targetId,
+            ExpiresAt = float.PositiveInfinity,
+            NextMoveSendTime = 0f,
+            AutoRepeat = true
+        };
+
+        Debug.Log("JxClassicClient skill approach. skill=" + skillSetting.m_nId +
+                  " target=" + targetId +
+                  " distance=" + Mathf.RoundToInt(distance) +
+                  " readyRadius=" + readyRadius +
+                  " attackRadius=" + skillSetting.m_nAttackRadius);
+        SendClassicSkillApproachMove(pendingClassicSkillCast, target, true);
+    }
+
+    private void ProcessPendingClassicSkillCast()
+    {
+        PendingClassicSkillCast pending = pendingClassicSkillCast;
+        if (pending == null || ClassicClient == null || world == null)
         {
             return;
         }
 
-        try
+        if (!pending.AutoRepeat && Time.time > pending.ExpiresAt)
         {
-            game.resource.settings.skill.SkillSetting skillSetting =
-                game.resource.settings.skill.SkillSetting.Get(skillId, Math.Max(1, skillLevel));
-            if (skillSetting == null)
+            pendingClassicSkillCast = null;
+            return;
+        }
+
+        game.resource.settings.skill.SkillSetting skillSetting =
+            game.resource.settings.skill.SkillSetting.GetRuntimeBase(pending.SkillId, pending.SkillLevel);
+        if (skillSetting == null || skillSetting.m_nId <= 0)
+        {
+            pendingClassicSkillCast = null;
+            return;
+        }
+
+        int selectedTargetId = NpcMgrs != null ? NpcMgrs.GetCurrentTargetID() : -1;
+        if (selectedTargetId > 0 && selectedTargetId != pending.TargetId)
+        {
+            pending.TargetId = selectedTargetId;
+        }
+
+        game.resource.settings.npcres.Controller target = FindClassicController(pending.TargetId);
+        if (target == null || world.GetMainPlayer() == null)
+        {
+            pendingClassicSkillCast = null;
+            return;
+        }
+
+        float distance = Vector2.Distance(GetClassicMainPlayerServerMpsPosition(), world.GetNpcMpsPosition(target));
+        if (distance <= GetClassicSkillReadyRadius(skillSetting))
+        {
+            if (Time.time < nextClassicSkillSendTime)
             {
                 return;
             }
 
-            if (skillSetting.m_nHorseLimited == 1 && PlayerMain.instance.IsUseHorse)
+            if (!pending.AutoRepeat)
             {
-                PlayerMain.instance.SetHorseRidingLocal(false);
-                RequestClassicRideToggle();
+                pendingClassicSkillCast = null;
             }
-            else if (skillSetting.m_nHorseLimited == 2 && !PlayerMain.instance.IsUseHorse)
-            {
-                PlayerMain.instance.SetHorseRidingLocal(true);
-                RequestClassicRideToggle();
-            }
+
+            nextClassicSkillSendTime = Time.time + GetClassicSkillSendInterval(skillSetting);
+            FireAndForgetClassicSend(ClassicClient.SendNpcSkillAsync(pending.SkillId, -1, pending.TargetId));
+            PreviewClassicNpcSkill(pending.SkillId, pending.SkillLevel, pending.TargetId, false, -1, pending.TargetId);
+            LogClassicSkillPacket("JxClassicClient >> pending npc skill", pending.SkillId, pending.SkillLevel, -1, pending.TargetId, skillSetting);
+            return;
         }
-        catch (Exception ex)
+
+        if (Time.time >= pending.NextMoveSendTime)
         {
-            Debug.LogWarning("JxClassicClient skill horse check skipped. skill=" + skillId +
-                             " level=" + skillLevel +
-                             " error=" + ex.GetBaseException().Message);
+            SendClassicSkillApproachMove(pending, target, false);
         }
     }
 
-    private static float GetClassicSkillSendInterval(int skillId, int skillLevel)
+    private void SendClassicSkillApproachMove(
+        PendingClassicSkillCast pending,
+        game.resource.settings.npcres.Controller target,
+        bool force)
     {
+        if (pending == null || target == null || ClassicClient == null || world == null)
+        {
+            return;
+        }
+
+        if (!force && Time.time < pending.NextMoveSendTime)
+        {
+            return;
+        }
+
+        game.resource.settings.npcres.Controller mainPlayer = world.GetMainPlayer();
+        if (!IsClassicControllerAlive(mainPlayer))
+        {
+            return;
+        }
+
+        Vector2 targetMps = world.GetNpcMpsPosition(target);
+        int targetMpsX = Mathf.RoundToInt(targetMps.x);
+        int targetMpsY = Mathf.RoundToInt(targetMps.y);
+        int direction = JxClassicMovement.GetDirection(mainPlayer.GetMapPosition(), target.GetMapPosition());
+        int moveSpeed = JxClassicMovement.NormalizeRunSpeed(
+            Math.Max(ClassicRunSpeed, JxClassicMovement.GetCurrentRunSpeed(mainPlayer)));
+
+        FireAndForgetClassicSend(ClassicClient.SendRunAsync(targetMpsX, targetMpsY, MapId));
+        world.MoveMainPlayerToClassicMps(targetMpsX, targetMpsY, moveSpeed, 768, direction, true);
+        pending.NextMoveSendTime = Time.time + ClassicSkillApproachResendInterval;
+    }
+
+    private Vector2 GetClassicMainPlayerServerMpsPosition()
+    {
+        if (MapX > 0 && MapY > 0)
+        {
+            return new Vector2(MapX, MapY);
+        }
+
+        return world != null
+            ? world.GetMainPlayerMpsPosition()
+            : Vector2.zero;
+    }
+
+    private static float GetClassicSkillSendInterval(game.resource.settings.skill.SkillSetting skillSetting)
+    {
+        if (skillSetting == null)
+        {
+            return ClassicSkillMinSendInterval;
+        }
+
         try
         {
-            game.resource.settings.skill.SkillSetting skillSetting =
-                game.resource.settings.skill.SkillSetting.Get(skillId, Math.Max(1, skillLevel));
-            if (skillSetting != null && skillSetting.m_nMinTimePerCast > 0)
+            bool isRiding = PlayerMain.instance != null && PlayerMain.instance.IsUseHorse;
+            int castTicks = isRiding && skillSetting.m_nMinTimePerCastOnHorse > 0
+                ? skillSetting.m_nMinTimePerCastOnHorse
+                : skillSetting.m_nMinTimePerCast;
+
+            if (castTicks > 0)
             {
-                return Mathf.Clamp(
-                    skillSetting.m_nMinTimePerCast / JxClassicMovement.CoreTickRate,
+                return Mathf.Max(
                     ClassicSkillMinSendInterval,
-                    ClassicSkillMaxSendInterval);
+                    castTicks / JxClassicMovement.CoreTickRate);
             }
         }
         catch (Exception ex)
         {
-            Debug.LogWarning("JxClassicClient skill cooldown fallback. skill=" + skillId +
-                             " level=" + skillLevel +
+            Debug.LogWarning("JxClassicClient skill cooldown fallback. skill=" + skillSetting.m_nId +
                              " error=" + ex.GetBaseException().Message);
         }
 

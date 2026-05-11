@@ -13,6 +13,7 @@ namespace game.resource.map
                 release,
                 add,
                 clear,
+                removeNpc,
             }
 
             public class Element
@@ -43,6 +44,16 @@ namespace game.resource.map
             public class Clear : Command.Element
             {
                 public Clear() : base(Command.ID.clear) { }
+            }
+
+            public class RemoveNpc : Command.Element
+            {
+                public settings.npcres.Controller npcController;
+
+                public RemoveNpc(settings.npcres.Controller npcController) : base(Command.ID.removeNpc)
+                {
+                    this.npcController = npcController;
+                }
             }
         }
 
@@ -98,6 +109,20 @@ namespace game.resource.map
             }
         }
 
+        public void RemoveNpc(settings.npcres.Controller npcController)
+        {
+            if (npcController == null)
+            {
+                return;
+            }
+
+            lock (this.commandQueue)
+            {
+                this.commandQueue.Enqueue(new Missile.Command.RemoveNpc(npcController));
+                System.Threading.Monitor.Pulse(this.commandQueue);
+            }
+        }
+
         ////////////////////////////////////////////////////////////////////////////////
 
         private void MainThread()
@@ -138,6 +163,10 @@ namespace game.resource.map
 
                         case Command.ID.clear:
                             this.Command_Clear();
+                            break;
+
+                        case Command.ID.removeNpc:
+                            this.Command_RemoveNpc((map.Missile.Command.RemoveNpc)command);
                             break;
 
                         default:
@@ -203,6 +232,28 @@ namespace game.resource.map
         private void Command_Clear()
         {
             this.missileMapping.Clear();
+        }
+
+        private void Command_RemoveNpc(map.Missile.Command.RemoveNpc command)
+        {
+            if (command.npcController == null)
+            {
+                return;
+            }
+
+            List<settings.skill.Missile> removeListing = new List<settings.skill.Missile>();
+            foreach (KeyValuePair<settings.skill.Missile, bool> pairIndex in this.missileMapping)
+            {
+                if (pairIndex.Key != null && pairIndex.Key.UsesNpc(command.npcController))
+                {
+                    removeListing.Add(pairIndex.Key);
+                }
+            }
+
+            foreach (settings.skill.Missile removeIndex in removeListing)
+            {
+                this.missileMapping.Remove(removeIndex);
+            }
         }
     }
 }

@@ -40,19 +40,32 @@ namespace game.network.jx
         private const byte S2CSyncNpc = 76;
         private const byte S2CSyncNpcMin = 77;
         private const byte S2CSyncNpcMinPlayer = 78;
+        private const byte S2CObjAdd = 79;
+        private const byte S2CNpcRemove = 84;
         private const byte S2CNpcWalk = 85;
         private const byte S2CNpcRun = 86;
+        private const byte S2CNpcJump = 89;
+        private const byte S2CNpcTalk = 90;
+        private const byte S2CNpcHurt = 91;
         private const byte S2CNpcDeath = 92;
+        private const byte S2CNpcChangeCurrentCamp = 93;
+        private const byte S2CNpcChangeCamp = 94;
+        private const byte S2CNpcSetTempCamp = 95;
         private const byte S2CSkillCast = 96;
         private const byte S2CPlayerExp = 98;
         private const byte S2CPlayerSyncLeadExp = 113;
         private const byte S2CPlayerLevelUp = 114;
         private const byte S2CPing = 143;
+        private const byte S2CSyncNpcState = 140;
         private const byte S2CNpcStand = 145;
         private const byte S2CCastSkillDirectly = 147;
+        private const byte S2CMsgShow = 148;
+        private const byte S2CSyncStateEffect = 149;
+        private const byte S2CPlayerRevive = 154;
         private const byte S2CRequestNpcFail = 155;
         private const byte S2CItemAutoMove = 158;
         private const byte S2CReplyClientPing = 174;
+        private const byte S2CNpcSecMove = 185;
         private const byte S2CPAutoMoveCallback = 201;
         private const byte S2CSyncPlayerMap = 203;
         private const byte S2CNpcSetPos = 206;
@@ -126,8 +139,12 @@ namespace game.network.jx
         private readonly Dictionary<int, int> requestedNpcTicks = new();
         private readonly Dictionary<int, int> knownPlayerMoveLogTicks = new();
         private readonly HashSet<byte> loggedUnhandledWorldProtocols = new();
+        private int lastWorldEventDropLogTick;
         private const int NpcRequestRetryMs = 450;
+        private const int NpcRevalidateRetryMs = 3000;
         private const int MaxNpcRequestRetriesPerPacket = 8;
+        private const int SyncNpcLengthFieldSize = 2;
+        private const int SyncNpcMinPacketSize = 42;
         private const int SyncAllSkillHeaderSize = 3;
         private const int SyncAllSkillLengthFieldSize = 2;
         private const int SyncAllSkillEntrySize = 8;
@@ -562,6 +579,11 @@ namespace game.network.jx
             }
 
             byte protocol = payload[offset];
+            if (IsLengthPrefixedS2CPacket(protocol))
+            {
+                return GetLengthPrefixedS2CPacketSize(payload, offset, remaining, protocol);
+            }
+
             if (protocol == S2CSyncCurPlayerSkill)
             {
                 if (remaining < SyncAllSkillHeaderSize)
@@ -579,6 +601,80 @@ namespace game.network.jx
             }
 
             return GetS2CFixedPacketSize(protocol);
+        }
+
+        private static bool IsLengthPrefixedS2CPacket(byte protocol)
+        {
+            return protocol == S2CSyncNpc ||
+                   protocol == S2CObjAdd ||
+                   protocol == 97 ||  // s2c_playertalk
+                   protocol == 112 || // s2c_playersendchat
+                   protocol == 129 || // s2c_chatloginfriendname
+                   protocol == 136 || // s2c_npcsetmenustate
+                   protocol == 139 || // s2c_chatscreensingleerror
+                   protocol == S2CMsgShow ||
+                   protocol == S2CSyncStateEffect ||
+                   protocol == 162 || // s2c_pksyncenmitystate
+                   protocol == 163;   // s2c_pksyncexercisestate
+        }
+
+        private static int GetLengthPrefixedS2CPacketSize(byte[] payload, int offset, int remaining, byte protocol)
+        {
+            if (remaining < 1 + SyncNpcLengthFieldSize)
+            {
+                return 0;
+            }
+
+            int protocolLong = BitConverter.ToUInt16(payload, offset + 1);
+            if (protocolLong < SyncNpcLengthFieldSize)
+            {
+                return 0;
+            }
+
+            int preferredSize = 1 + protocolLong;
+            if (protocol == S2CSyncNpc && preferredSize < SyncNpcMinPacketSize)
+            {
+                return 0;
+            }
+
+            int legacySize = protocolLong;
+            if (preferredSize <= remaining &&
+                (preferredSize == remaining || CanStartS2CPacket(payload, offset + preferredSize, remaining - preferredSize)))
+            {
+                return preferredSize;
+            }
+
+            if (legacySize <= remaining &&
+                (legacySize == remaining || CanStartS2CPacket(payload, offset + legacySize, remaining - legacySize)))
+            {
+                return legacySize;
+            }
+
+            return preferredSize <= remaining ? preferredSize : 0;
+        }
+
+        private static bool CanStartS2CPacket(byte[] payload, int offset, int remaining)
+        {
+            if (payload == null || remaining <= 0 || offset < 0 || offset >= payload.Length)
+            {
+                return false;
+            }
+
+            byte protocol = payload[offset];
+            int fixedSize = GetS2CFixedPacketSize(protocol);
+            if (fixedSize > 0)
+            {
+                return fixedSize <= remaining;
+            }
+
+            if (!IsLengthPrefixedS2CPacket(protocol) || remaining < 1 + SyncNpcLengthFieldSize)
+            {
+                return false;
+            }
+
+            int protocolLong = BitConverter.ToUInt16(payload, offset + 1);
+            return protocolLong >= SyncNpcLengthFieldSize &&
+                   (1 + protocolLong <= remaining || protocolLong <= remaining);
         }
 
         private static int GetS2CFixedPacketSize(byte protocol)
@@ -604,8 +700,19 @@ namespace game.network.jx
                 case S2CNpcWalk:
                 case S2CNpcRun:
                     return 13;
+                case S2CNpcJump:
+                    return 13;
+                case S2CNpcTalk:
+                    return 265;
+                case S2CNpcHurt:
+                    return 17;
                 case S2CNpcDeath:
                     return 69;
+                case S2CNpcChangeCurrentCamp:
+                case S2CNpcChangeCamp:
+                    return 6;
+                case S2CNpcSetTempCamp:
+                    return 2;
                 case S2CSkillCast:
                     return 37;
                 case S2CPlayerExp:
@@ -614,6 +721,8 @@ namespace game.network.jx
                     return 5;
                 case S2CPlayerLevelUp:
                     return 31;
+                case S2CSyncNpcState:
+                    return 149;
                 case S2CPing:
                     return 5;
                 case S2CNpcStand:
@@ -656,14 +765,16 @@ namespace game.network.jx
                     return 6;
                 case 83: // s2c_objTrapAct
                     return 13;
-                case 84: // s2c_npcremove
+                case S2CNpcRemove:
                     return 9;
-                case 89: // s2c_npcjump
-                    return 13;
                 case 144: // s2c_npcsit
                     return 69;
+                case S2CPlayerRevive:
+                    return 9;
                 case 169: // s2c_npcsleepmode
                     return 6;
+                case S2CNpcSecMove:
+                    return 13;
                 case 204: // s2c_synconestate
                     return 13;
                 case 205: // s2c_syncnodataeffect
@@ -862,6 +973,16 @@ namespace game.network.jx
             int param = BitConverter.ToInt32(packet, 3);
             int action = param & LoginActionFilter;
             int response = param & ~LoginActionFilter;
+
+            if (packet.Length >= 1 + KLoginAccountInfoSize)
+            {
+                result.ServerRegionIndex = ReadPositiveUInt32(packet, 135, 0);
+                result.EnterMapIndex = ReadPositiveUInt32(packet, 139, 0);
+                result.ProtocolVersion = ReadPositiveUInt32(packet, 143, 0);
+                Debug.Log("JxClassicClient login response. region=" + result.ServerRegionIndex +
+                          " enterMap=" + result.EnterMapIndex +
+                          " protocolVersion=" + result.ProtocolVersion);
+            }
 
             if (action == LoginALogin && response == LoginRSuccess)
             {
@@ -1313,10 +1434,38 @@ namespace game.network.jx
                 case S2CNpcDeath:
                     if (TryParseNpcCommandSync(packet, (byte)NPCCMD.do_death, out ClassicNpcCommandSync deathSync))
                     {
+                        ForgetNpcKnown(deathSync.Id);
+                        Debug.Log("JxClassicClient << npc death id=" + deathSync.Id);
                         EnqueueWorldEvent(new ClassicWorldEvent
                         {
                             Type = ClassicWorldEventType.ActorCommandSync,
                             Command = deathSync
+                        });
+                    }
+                    break;
+
+                case S2CPlayerRevive:
+                    if (TryParseNpcReviveSync(packet, out ClassicNpcCommandSync reviveSync))
+                    {
+                        Debug.Log("JxClassicClient << npc revive id=" + reviveSync.Id +
+                                  " type=" + reviveSync.CommandParam);
+                        EnqueueWorldEvent(new ClassicWorldEvent
+                        {
+                            Type = ClassicWorldEventType.ActorCommandSync,
+                            Command = reviveSync
+                        });
+                    }
+                    break;
+
+                case S2CNpcRemove:
+                    if (TryParseNpcRemoveSync(packet, out int removedNpcId, out bool removeRegion))
+                    {
+                        ForgetNpcKnown(removedNpcId);
+                        EnqueueWorldEvent(new ClassicWorldEvent
+                        {
+                            Type = ClassicWorldEventType.NpcRemoveSync,
+                            RemoveNpcId = removedNpcId,
+                            RemoveNpcRegion = removeRegion
                         });
                     }
                     break;
@@ -1577,6 +1726,16 @@ namespace game.network.jx
             }
 
             Debug.LogWarning("JxClassicClient << request npc fail id=" + id);
+            if (id > 0 && id != currentPlayerId)
+            {
+                ForgetNpcKnown(id);
+                EnqueueWorldEvent(new ClassicWorldEvent
+                {
+                    Type = ClassicWorldEventType.NpcRemoveSync,
+                    RemoveNpcId = id,
+                    RemoveNpcRegion = false
+                });
+            }
         }
 
         private bool IsFullNpcKnown(int id)
@@ -1622,6 +1781,23 @@ namespace game.network.jx
             }
         }
 
+        public void ForgetNpcKnown(int id)
+        {
+            if (id <= 0 || id == currentPlayerId)
+            {
+                return;
+            }
+
+            lock (npcSyncLock)
+            {
+                fullNpcIds.Remove(id);
+                fullNpcKinds.Remove(id);
+                knownPlayerIds.Remove(id);
+                requestedNpcTicks.Remove(id);
+                knownPlayerMoveLogTicks.Remove(id);
+            }
+        }
+
         private bool IsPlayerKnown(int id)
         {
             lock (npcSyncLock)
@@ -1660,6 +1836,35 @@ namespace game.network.jx
         {
             await SendPacketAsync(BuildRequestNpcPacket(id));
             Debug.Log("JxClassicClient >> request npc id=" + id);
+        }
+
+        public void RevalidateNpc(int id)
+        {
+            if (id <= 0 || id == currentPlayerId)
+            {
+                return;
+            }
+
+            int now = Environment.TickCount;
+            lock (npcSyncLock)
+            {
+                if (requestedNpcTicks.TryGetValue(id, out int lastRequestTick) &&
+                    unchecked((uint)(now - lastRequestTick)) < NpcRevalidateRetryMs)
+                {
+                    return;
+                }
+
+                requestedNpcTicks[id] = now;
+            }
+
+            _ = RequestNpcAsync(id).ContinueWith(task =>
+            {
+                if (task.Exception != null)
+                {
+                    Debug.LogWarning("JxClassicClient request npc failed. id=" + id +
+                                     " error=" + task.Exception.GetBaseException().Message);
+                }
+            }, TaskScheduler.Default);
         }
 
         private async Task RequestNpcFromPositionIfUnknownAsync(ClassicNpcPositionSync sync, byte protocol)
@@ -1787,15 +1992,109 @@ namespace game.network.jx
 
         private void EnqueueWorldEvent(ClassicWorldEvent worldEvent)
         {
+            if (worldEvent == null)
+            {
+                return;
+            }
+
             lock (worldEventLock)
             {
-                while (worldEvents.Count >= MaxQueuedWorldEvents)
+                if (worldEvents.Count >= MaxQueuedWorldEvents && !MakeRoomForWorldEvent(worldEvent))
                 {
-                    worldEvents.Dequeue();
+                    LogWorldEventDrop(worldEvent, "new");
+                    return;
                 }
 
                 worldEvents.Enqueue(worldEvent);
             }
+        }
+
+        private bool MakeRoomForWorldEvent(ClassicWorldEvent nextEvent)
+        {
+            if (worldEvents.Count < MaxQueuedWorldEvents)
+            {
+                return true;
+            }
+
+            if (DropFirstDroppableWorldEvent())
+            {
+                return true;
+            }
+
+            if (IsCriticalWorldEvent(nextEvent))
+            {
+                ClassicWorldEvent dropped = worldEvents.Dequeue();
+                LogWorldEventDrop(dropped, "old-critical-pressure");
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool DropFirstDroppableWorldEvent()
+        {
+            int count = worldEvents.Count;
+            bool dropped = false;
+
+            for (int i = 0; i < count; i++)
+            {
+                ClassicWorldEvent queued = worldEvents.Dequeue();
+                if (!dropped && IsDroppableWorldEvent(queued))
+                {
+                    dropped = true;
+                    LogWorldEventDrop(queued, "old-droppable");
+                    continue;
+                }
+
+                worldEvents.Enqueue(queued);
+            }
+
+            return dropped;
+        }
+
+        private static bool IsCriticalWorldEvent(ClassicWorldEvent worldEvent)
+        {
+            if (worldEvent == null)
+            {
+                return false;
+            }
+
+            return worldEvent.Type == ClassicWorldEventType.ActorCommandSync ||
+                   worldEvent.Type == ClassicWorldEventType.NpcRemoveSync ||
+                   worldEvent.Type == ClassicWorldEventType.CurrentPlayerSync ||
+                   worldEvent.Type == ClassicWorldEventType.CurrentPlayerNormalSync ||
+                   worldEvent.Type == ClassicWorldEventType.PlayerAttributeSync ||
+                   worldEvent.Type == ClassicWorldEventType.PlayerLevelUpSync ||
+                   worldEvent.Type == ClassicWorldEventType.ItemSync ||
+                   worldEvent.Type == ClassicWorldEventType.ItemRemoveSync ||
+                   worldEvent.Type == ClassicWorldEventType.ItemMoveSync ||
+                   worldEvent.Type == ClassicWorldEventType.MoneySync ||
+                   worldEvent.Type == ClassicWorldEventType.XuSync;
+        }
+
+        private static bool IsDroppableWorldEvent(ClassicWorldEvent worldEvent)
+        {
+            if (worldEvent == null)
+            {
+                return true;
+            }
+
+            return worldEvent.Type == ClassicWorldEventType.NpcNormalSync ||
+                   worldEvent.Type == ClassicWorldEventType.PlayerPositionSync;
+        }
+
+        private void LogWorldEventDrop(ClassicWorldEvent worldEvent, string reason)
+        {
+            int now = Environment.TickCount;
+            if (unchecked((uint)(now - lastWorldEventDropLogTick)) < 1000)
+            {
+                return;
+            }
+
+            lastWorldEventDropLogTick = now;
+            Debug.LogWarning("JxClassicClient world event queue drop. reason=" + reason +
+                             " type=" + (worldEvent != null ? worldEvent.Type.ToString() : "null") +
+                             " queued=" + worldEvents.Count);
         }
 
         private static CharacterData CreateFallbackCharacter(CharacterLogin selectedCharacter)
@@ -2004,7 +2303,7 @@ namespace game.network.jx
                 NpcSettingIndex = (npcSetting >> 16) & 0xffff,
                 Level = npcSetting & 0xffff,
                 Enchant = BitConverter.ToUInt16(packet, enchantOffset),
-                CurrentLife = ReadPositiveInt32(packet, currentLifeOffset, 0),
+                CurrentLife = ReadInt32OrDefault(packet, currentLifeOffset, 0),
                 Name = ReadNullTerminated(packet, nameOffset, nameLength)
             };
 
@@ -2202,7 +2501,7 @@ namespace game.network.jx
 
             sync = null;
 
-            if (packet.Length < nameOffset + NameLength)
+            if (packet.Length < currentLifeOffset + sizeof(int))
             {
                 return false;
             }
@@ -2223,7 +2522,7 @@ namespace game.network.jx
                 Faction = ReadInt32OrDefault(packet, factionOffset, 0),
                 MaxLife = ReadPositiveInt32(packet, maxLifeOffset, 1),
                 CurrentLifeMax = ReadPositiveInt32(packet, currentLifeMaxOffset, 1),
-                CurrentLife = ReadPositiveInt32(packet, currentLifeOffset, 1)
+                CurrentLife = ReadInt32OrDefault(packet, currentLifeOffset, 0)
             };
 
             sync.HasDirection = packet[hasDirectionOffset] != 0;
@@ -2337,6 +2636,48 @@ namespace game.network.jx
             };
 
             return sync.Id != 0;
+        }
+
+        private static bool TryParseNpcReviveSync(byte[] packet, out ClassicNpcCommandSync sync)
+        {
+            const int idOffset = 1;
+            const int reviveTypeOffset = 5;
+
+            sync = null;
+            if (packet == null || packet.Length < reviveTypeOffset + sizeof(int))
+            {
+                return false;
+            }
+
+            sync = new ClassicNpcCommandSync
+            {
+                Id = unchecked((int)BitConverter.ToUInt32(packet, idOffset)),
+                Command = (byte)NPCCMD.do_revive,
+                CommandParam = BitConverter.ToInt32(packet, reviveTypeOffset)
+            };
+
+            return sync.Id != 0;
+        }
+
+        private static bool TryParseNpcRemoveSync(byte[] packet, out int npcId, out bool removeRegion)
+        {
+            const int idOffset = 1;
+            const int removeRegionOffset = 5;
+
+            npcId = 0;
+            removeRegion = false;
+            if (packet == null || packet.Length < idOffset + sizeof(uint))
+            {
+                return false;
+            }
+
+            npcId = unchecked((int)BitConverter.ToUInt32(packet, idOffset));
+            if (packet.Length >= removeRegionOffset + sizeof(int))
+            {
+                removeRegion = BitConverter.ToInt32(packet, removeRegionOffset) != 0;
+            }
+
+            return npcId != 0;
         }
 
         private static bool TryParseSkillCastSync(byte[] packet, out ClassicSkillCastSync sync)
@@ -3538,6 +3879,9 @@ namespace game.network.jx
         public bool Success;
         public string Message;
         public List<CharacterLogin> Characters;
+        public int ServerRegionIndex;
+        public int EnterMapIndex;
+        public int ProtocolVersion;
     }
 
     public sealed class GameLoginResult
@@ -3564,6 +3908,7 @@ namespace game.network.jx
         PlayerNormalSync,
         PlayerPositionSync,
         ActorCommandSync,
+        NpcRemoveSync,
         PlayerAttributeSync,
         PlayerSkillListSync,
         PlayerSkillLevelSync,
@@ -3589,6 +3934,8 @@ namespace game.network.jx
         public ClassicPlayerSync Player;
         public ClassicNpcPositionSync Position;
         public ClassicNpcCommandSync Command;
+        public int RemoveNpcId;
+        public bool RemoveNpcRegion;
         public ClassicAttributeSync Attribute;
         public ClassicSkillListSync SkillList;
         public ClassicSkillLevelSync Skill;
@@ -3824,6 +4171,7 @@ namespace game.network.jx
     {
         public int Id;
         public byte Command;
+        public int CommandParam;
     }
 
     public sealed class ClassicSkillCastSync

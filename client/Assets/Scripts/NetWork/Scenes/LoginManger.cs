@@ -28,6 +28,8 @@ public class LoginManger : BaseMonoBehaviour
     [SerializeField]
     private uint classicEnterMapIndex = 53;
     [SerializeField]
+    private bool classicForceEnterMapOnLogin = false;
+    [SerializeField]
     private int classicFallbackMapX = 54784;
     [SerializeField]
     private int classicFallbackMapY = 109056;
@@ -191,13 +193,18 @@ public class LoginManger : BaseMonoBehaviour
             classicClient?.Dispose();
             classicClient = new JxClassicClient();
 
+            uint loginEnterMapIndex = classicForceEnterMapOnLogin ? classicEnterMapIndex : 0;
+            Debug.Log("LoginManger classic login request. region=" + classicServerRegionIndex +
+                      " selectedEnterMap=" + classicEnterMapIndex +
+                      " sentEnterMap=" + loginEnterMapIndex);
+
             LoginResult result = await classicClient.LoginAsync(
                 classicServerHost,
                 classicServerPort,
                 userName,
                 userpassword,
                 classicServerRegionIndex,
-                classicEnterMapIndex);
+                loginEnterMapIndex);
 
             HideLoading();
             isClassicLoginRunning = false;
@@ -209,7 +216,9 @@ public class LoginManger : BaseMonoBehaviour
             }
 
             characterReply = result.Characters ?? new List<CharacterLogin>();
-            Debug.Log("LoginManger classic login success. roleCount=" + characterReply.Count);
+            Debug.Log("LoginManger classic login success. roleCount=" + characterReply.Count +
+                      " responseRegion=" + result.ServerRegionIndex +
+                      " responseEnterMap=" + result.EnterMapIndex);
             selectedCharacterIndex = 0;
             LoginResponse(1);
         }
@@ -321,7 +330,7 @@ public class LoginManger : BaseMonoBehaviour
         }
 
         classicServerRegionIndex = (uint)Math.Max(1, regionIndex);
-        classicEnterMapIndex = (uint)Math.Max(1, enterMapIndex);
+        classicEnterMapIndex = (uint)Math.Max(0, enterMapIndex);
         SelectClassicServer();
     }
     [SerializeField]
@@ -752,7 +761,13 @@ public class LoginManger : BaseMonoBehaviour
 
     private void ApplyClassicWorldState(GameLoginResult result, CharacterLogin loginCharacter)
     {
-        int mapId = result.MapId > 0 ? result.MapId : (int)classicEnterMapIndex;
+        int mapId = result.MapId;
+        if (mapId <= 0)
+        {
+            mapId = ResolveClassicPreviewMapId();
+            Debug.LogWarning("LoginManger classic world missing server map id; using fallback mapId=" + mapId);
+        }
+
         mapId = Math.Max(1, Math.Min(ushort.MaxValue, mapId));
 
         int mapX = result.MapX;

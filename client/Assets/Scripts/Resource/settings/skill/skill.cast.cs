@@ -9,6 +9,11 @@ namespace game.resource.settings.skill
         {
             List<settings.skill.Missile> result = new List<settings.skill.Missile>();
 
+            if (this.skillSetting == null || castParams == null)
+            {
+                return result;
+            }
+
             if (castParams.launcher.HaveData() == false)
             {
                 return result;

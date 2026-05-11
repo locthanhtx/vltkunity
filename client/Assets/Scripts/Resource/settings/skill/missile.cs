@@ -73,5 +73,16 @@ namespace game.resource.settings.skill
 
         public resource.map.Position GetMapPosition() => this.texture.GetMapPosition();
 
+        public bool UsesNpc(settings.npcres.Controller npcController)
+        {
+            if (npcController == null || this.skillParam == null)
+            {
+                return false;
+            }
+
+            return (this.skillParam.launcher != null && this.skillParam.launcher.ReferencesNpc(npcController)) ||
+                   (this.skillParam.target != null && this.skillParam.target.ReferencesNpc(npcController));
+        }
+
     }
 }

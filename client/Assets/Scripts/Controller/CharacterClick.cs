@@ -56,11 +56,17 @@ public class CharacterClick : BaseMonoBehaviour, ICharacterObj
         CharacterClick player = PhotonManager.Instance.CharClientListener()?.FindPlayer(targetId);
         if (player != null && player.controller != null)
         {
+            if (player.controller.data.m_Doing == game.resource.settings.npcres.Datafield.NPCCMD.do_death ||
+                player.controller.data.m_Doing == game.resource.settings.npcres.Datafield.NPCCMD.do_revive)
+            {
+                return null;
+            }
+
             return player.controller;
         }
 
         NpcClick npc = PhotonManager.Instance.NpcClientListener()?.FindNpc(targetId);
-        return npc?.GetController();
+        return npc != null && npc.IsAlive ? npc.GetController() : null;
     }
 
     public virtual void DoAudio(NPCCMD cmd)

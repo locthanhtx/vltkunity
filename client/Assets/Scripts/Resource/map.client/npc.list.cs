@@ -308,6 +308,21 @@ namespace game.resource.map
             }
         }
 
+        public void Remove(settings.npcres.Controller controller)
+        {
+            if (controller == null || controller.map.npcIndex <= 0)
+            {
+                return;
+            }
+
+            this.Del(
+                controller.map.gridVertical,
+                controller.map.gridHorizontal,
+                controller.map.gridElementIndex,
+                controller.map.npcIndex);
+            controller.map.Reset();
+        }
+
         public _Matrix.Grid MatrixAdd(game.resource.map.Position.Grid grid, int value) => this.matrix.Add(grid, value);
         public void MatrixDel(int gridVertical, int gridHorizontal, int gridElementIndex) => this.matrix.Del(gridVertical, gridHorizontal, gridElementIndex);
         public bool MatrixHaveNpc(map.Position.Grid grid) => this.matrix.HaveNpc(grid);

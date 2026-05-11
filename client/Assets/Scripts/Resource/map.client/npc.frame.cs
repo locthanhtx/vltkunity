@@ -12,6 +12,7 @@ namespace game.resource.map
                 unidentified = 0,
                 release,
                 add,
+                remove,
             }
 
             public class Element
@@ -34,6 +35,16 @@ namespace game.resource.map
                 public settings.npcres.Controller npcController;
 
                 public Add(settings.npcres.Controller npcController) : base(Command.ID.add)
+                {
+                    this.npcController = npcController;
+                }
+            }
+
+            public class Remove : Command.Element
+            {
+                public settings.npcres.Controller npcController;
+
+                public Remove(settings.npcres.Controller npcController) : base(Command.ID.remove)
                 {
                     this.npcController = npcController;
                 }
@@ -78,6 +89,20 @@ namespace game.resource.map
             }
         }
 
+        public void Remove(settings.npcres.Controller npcController)
+        {
+            if (npcController == null)
+            {
+                return;
+            }
+
+            lock (this.commandQueue)
+            {
+                this.commandQueue.Enqueue(new NpcFrame.Command.Remove(npcController));
+                System.Threading.Monitor.Pulse(this.commandQueue);
+            }
+        }
+
         ////////////////////////////////////////////////////////////////////////////////
 
         private void MainThread()
@@ -114,6 +139,10 @@ namespace game.resource.map
                     {
                         case Command.ID.add:
                             this.Command_Add((map.NpcFrame.Command.Add)command);
+                            break;
+
+                        case Command.ID.remove:
+                            this.Command_Remove((map.NpcFrame.Command.Remove)command);
                             break;
 
                         default:
@@ -155,6 +184,14 @@ namespace game.resource.map
         private void Command_Add(map.NpcFrame.Command.Add command)
         {
             this.npcMapping[command.npcController] = true;
+        }
+
+        private void Command_Remove(map.NpcFrame.Command.Remove command)
+        {
+            if (command.npcController != null)
+            {
+                this.npcMapping.Remove(command.npcController);
+            }
         }
     }
 }

@@ -1,4 +1,6 @@
 
+using System;
+
 namespace game.resource.settings.skill
 {
     public class Params
@@ -9,6 +11,7 @@ namespace game.resource.settings.skill
             public settings.skill.Missile missile;
             public resource.map.Position position;
             public skill.Defination.eSkillLauncherType type;
+            private Func<resource.map.Position> mapPositionResolver;
 
             public Owner() {}
 
@@ -33,19 +36,34 @@ namespace game.resource.settings.skill
             public void SetData(settings.npcres.Controller controller)
             {
                 this.npc = controller;
+                this.mapPositionResolver = null;
                 this.type = skill.Defination.eSkillLauncherType.SKILL_SLT_Npc;
             }
 
             public void SetData(settings.skill.Missile missile)
             {
                 this.missile = missile;
+                this.mapPositionResolver = null;
                 this.type = skill.Defination.eSkillLauncherType.SKILL_SLT_Missle;
             }
 
             public void SetData(resource.map.Position position)
             {
                 this.position = position;
+                this.mapPositionResolver = null;
                 this.type = skill.Defination.eSkillLauncherType.SKILL_SLT_Position;
+            }
+
+            public void SetMapPositionResolver(Func<resource.map.Position> resolver)
+            {
+                this.mapPositionResolver = resolver;
+            }
+
+            public bool ReferencesNpc(settings.npcres.Controller npcController)
+            {
+                return npcController != null &&
+                       this.type == skill.Defination.eSkillLauncherType.SKILL_SLT_Npc &&
+                       this.npc == npcController;
             }
 
             public bool HaveData()
@@ -63,6 +81,15 @@ namespace game.resource.settings.skill
 
             public resource.map.Position GetMapPosition()
             {
+                if (this.mapPositionResolver != null && this.HaveData())
+                {
+                    resource.map.Position resolvedPosition = this.mapPositionResolver();
+                    if (resolvedPosition != null)
+                    {
+                        return resolvedPosition;
+                    }
+                }
+
                 switch (this.type)
                 {
                     case skill.Defination.eSkillLauncherType.SKILL_SLT_Npc:

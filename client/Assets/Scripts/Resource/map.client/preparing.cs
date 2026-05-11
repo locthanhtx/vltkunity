@@ -119,11 +119,13 @@ namespace game.resource.map
             {
                 public settings.npcres.Controller special;
                 public settings.npcres.Controller normal;
+                public bool destroyNode;
 
-                public HideNpc(settings.npcres.Controller special = null, settings.npcres.Controller normal = null) : base (Command.ID.hideNpc)
+                public HideNpc(settings.npcres.Controller special = null, settings.npcres.Controller normal = null, bool destroyNode = false) : base (Command.ID.hideNpc)
                 {
                     this.special = special;
                     this.normal = normal;
+                    this.destroyNode = destroyNode;
                 }
             }
 
@@ -408,6 +410,28 @@ namespace game.resource.map
             lock (this.commandQueue)
             {
                 this.commandQueue.Enqueue(new Preparing.Command.FPS(fps));
+                System.Threading.Monitor.Pulse(this.commandQueue);
+            }
+        }
+
+        public void DestroyNpc(settings.npcres.Controller npc)
+        {
+            if (npc == null)
+            {
+                return;
+            }
+
+            lock (this.commandQueue)
+            {
+                if (npc.IsSpecialNpc())
+                {
+                    this.commandQueue.Enqueue(new Preparing.Command.HideNpc(npc, null, destroyNode: true));
+                }
+                else
+                {
+                    this.commandQueue.Enqueue(new Preparing.Command.HideNpc(null, npc, destroyNode: true));
+                }
+
                 System.Threading.Monitor.Pulse(this.commandQueue);
             }
         }
@@ -1187,13 +1211,13 @@ namespace game.resource.map
 
             if (_command.special != null)
             {
-                this.textureThread.PushCommand(new Textures.Command.HideSpecialNpc(_command.special));
+                this.textureThread.PushCommand(new Textures.Command.HideSpecialNpc(_command.special, _command.destroyNode));
                 grid = _command.special.GetMapPosition().GetGrid();
             }
 
             if (_command.normal != null)
             {
-                this.textureThread.PushCommand(new Textures.Command.HideNormalNpc(_command.normal));
+                this.textureThread.PushCommand(new Textures.Command.HideNormalNpc(_command.normal, _command.destroyNode));
                 grid = _command.normal.GetMapPosition().GetGrid();
             }
 

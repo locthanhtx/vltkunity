@@ -247,6 +247,17 @@ namespace game.resource
         /// </summary>
         public void HideNpc(settings.npcres.Controller npcController) => this.preparingCommand.HideNpc(npcController);
 
+        public void DestroyNpc(settings.npcres.Controller npcController)
+        {
+            if (npcController == null)
+            {
+                return;
+            }
+
+            this.npcFrame.Remove(npcController);
+            this.preparingCommand.DestroyNpc(npcController);
+        }
+
         //////////////////////////////////////////////////////////////////////////
 
         /// <summary>

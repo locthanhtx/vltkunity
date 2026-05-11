@@ -52,5 +52,26 @@ namespace game.resource.settings.skill
 
             return Cache.Settings.Skill.skillsIdToDataMapping[cacheKey];
         }
+
+        public static skill.SkillSetting GetRuntimeBase(int skillId, int skillLevel)
+        {
+            int safeSkillLevel = System.Math.Max(1, skillLevel);
+            int cacheKey = int.MinValue + (skillId * 100) + safeSkillLevel;
+
+            if (skillId <= 0)
+            {
+                return null;
+            }
+
+            if (Cache.Settings.Skill.skillsIdToDataMapping.ContainsKey(cacheKey) == false)
+            {
+                skill.SkillSetting newSkillSetting = new skill.SkillSetting();
+                newSkillSetting.LoadBase(skillId);
+                newSkillSetting.skillLevel = safeSkillLevel;
+                Cache.Settings.Skill.skillsIdToDataMapping[cacheKey] = newSkillSetting;
+            }
+
+            return Cache.Settings.Skill.skillsIdToDataMapping[cacheKey];
+        }
     }
 }

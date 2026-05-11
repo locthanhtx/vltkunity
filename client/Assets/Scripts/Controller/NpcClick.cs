@@ -6,6 +6,7 @@ using Photon.ShareLibrary.Constant;
 using Photon.ShareLibrary.Entities;
 using Photon.ShareLibrary.Handlers;
 using Photon.ShareLibrary.Utils;
+using System.Collections;
 using UnityEngine;
 using static game.resource.settings.npcres.Identification;
 
@@ -46,10 +47,38 @@ public class NpcClick : MonoBehaviour, ICharacterObj
     private int npcType;
     private int mapX;
     private int mapY;
+    private Coroutine removeAfterDeathCoroutine;
 
     private int HPMax, HPCur;
-    public int CurrentHPMax { get { return HPMax; } set { HPMax = value; SyncNpcHP(); } }
-    public int CurrentHPCur { get { return HPCur; } set { HPCur = value; SyncNpcHP(); } }
+    public float LastClassicSyncTime { get; private set; } = -1f;
+    public int CurrentHPMax
+    {
+        get { return HPMax; }
+        set
+        {
+            HPMax = value;
+            if (controller != null)
+            {
+                controller.data.m_CurrentLifeMax = HPMax;
+            }
+            SyncNpcHP();
+        }
+    }
+    public int CurrentHPCur
+    {
+        get { return HPCur; }
+        set
+        {
+            HPCur = value;
+            if (controller != null)
+            {
+                controller.data.m_CurrentLife = HPCur;
+            }
+            SyncNpcHP();
+        }
+    }
+    public bool IsDead => npcCmd == NPCCMD.do_death || HPCur <= 0;
+    public bool IsAlive => !IsDead && controller != null && controller.GetAppearance().parent.activeSelf;
     private game.resource.settings.NpcRes.Normal controller;
     private GameObject selectGameObject;
 
@@ -86,6 +115,11 @@ public class NpcClick : MonoBehaviour, ICharacterObj
 
     public game.resource.settings.NpcRes.Normal GetController() => controller;
 
+    public void MarkClassicSynced()
+    {
+        LastClassicSyncTime = Time.time;
+    }
+
     public void BuildNPC(int npcId, game.resource.settings.NpcRes.Normal controller, GameObject selectGameObject)
     {
         this.npcId = npcId;
@@ -97,6 +131,11 @@ public class NpcClick : MonoBehaviour, ICharacterObj
 
     public void ChangeSelect(bool isSelect)
     {
+        if (isSelect && IsDead)
+        {
+            isSelect = false;
+        }
+
         this.selectGameObject.SetActive(isSelect);
     }
 
@@ -124,6 +163,15 @@ public class NpcClick : MonoBehaviour, ICharacterObj
             this.HPMax = HPMax;
             this.HPCur = HPCur;
             this.level = level;
+            controller.data.m_Kind = (game.resource.settings.npcres.Datafield.NPCKIND)(int)this.kind;
+            controller.data.m_CurrentLifeMax = this.HPMax;
+            controller.data.m_CurrentLife = this.HPCur;
+            this.npcCmd = HPCur > 0 ? NPCCMD.do_stand : NPCCMD.do_death;
+            MarkClassicSynced();
+            if (HPCur > 0)
+            {
+                CancelDeathRemoval();
+            }
 
             if (this.kind == NPCKIND.kind_normal)
             {
@@ -138,14 +186,74 @@ public class NpcClick : MonoBehaviour, ICharacterObj
 
     public void DoSkill(int id, byte level, int targetId = -1)
     {
-        if (controller != null)
+        if (controller != null && IsAlive)
         {
             NpcAction.DoAction(controller, NPCCMD.do_attack);
         }
     }
 
+    public void MarkAlive()
+    {
+        if (HPCur <= 0)
+        {
+            return;
+        }
+
+        if (npcCmd == NPCCMD.do_death || npcCmd == NPCCMD.do_revive)
+        {
+            npcCmd = NPCCMD.do_stand;
+        }
+
+        CancelDeathRemoval();
+    }
+
+    public void MarkDead(float removeDelaySeconds)
+    {
+        npcCmd = NPCCMD.do_death;
+        CurrentHPCur = 0;
+        ChangeSelect(false);
+        if (controller != null)
+        {
+            NpcAction.DoAction(controller, NPCCMD.do_death);
+        }
+
+        if (removeAfterDeathCoroutine != null)
+        {
+            StopCoroutine(removeAfterDeathCoroutine);
+        }
+
+        removeAfterDeathCoroutine = StartCoroutine(RemoveAfterDeath(removeDelaySeconds));
+    }
+
+    private IEnumerator RemoveAfterDeath(float removeDelaySeconds)
+    {
+        yield return new WaitForSeconds(Mathf.Max(0.05f, removeDelaySeconds));
+
+        removeAfterDeathCoroutine = null;
+        if (IsDead && PhotonManager.Instance != null)
+        {
+            PhotonManager.Instance.NpcMgrs?.DelNpc(npcId);
+        }
+    }
+
+    private void CancelDeathRemoval()
+    {
+        if (removeAfterDeathCoroutine == null)
+        {
+            return;
+        }
+
+        StopCoroutine(removeAfterDeathCoroutine);
+        removeAfterDeathCoroutine = null;
+    }
+
     private void OnMouseUp()
     {
+        if (IsDead)
+        {
+            return;
+        }
+
         var enemy = Utils.GetRelation(PlayerMain.instance, this);
         if (enemy == NPCRELATION.relation_enemy)
         {

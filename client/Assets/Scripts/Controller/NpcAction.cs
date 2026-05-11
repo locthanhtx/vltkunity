@@ -7,11 +7,23 @@ public static class NpcAction
 {
     public static void DoDamage(game.resource.settings.npcres.Controller controller, int cmd)
     {
+        if (controller == null)
+        {
+            return;
+        }
+
         controller.AddStateReceivedAppendDamage(cmd);
     }
 
     public static void DoAction(game.resource.settings.npcres.Controller controller, NPCCMD cmd)
     {
+        if (controller == null)
+        {
+            return;
+        }
+
+        controller.data.m_Doing = (game.resource.settings.npcres.Datafield.NPCCMD)(int)cmd;
+
         switch (cmd)
         {
             case NPCCMD.do_sit:

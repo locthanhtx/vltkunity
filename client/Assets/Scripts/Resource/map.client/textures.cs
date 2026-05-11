@@ -120,10 +120,12 @@ namespace game.resource.map
             public class HideSpecialNpc : Command.Element
             {
                 public settings.npcres.Controller specialNpc;
+                public bool destroyNode;
 
-                public HideSpecialNpc(settings.npcres.Controller _specialNpc) : base(Command.ID.hideSpecialNpc)
+                public HideSpecialNpc(settings.npcres.Controller _specialNpc, bool destroyNode = false) : base(Command.ID.hideSpecialNpc)
                 {
                     this.specialNpc = _specialNpc;
+                    this.destroyNode = destroyNode;
                 }
             }
 
@@ -140,10 +142,12 @@ namespace game.resource.map
             public class HideNormalNpc : Command.Element
             {
                 public settings.npcres.Controller normalNpc;
+                public bool destroyNode;
 
-                public HideNormalNpc(settings.npcres.Controller normalNpc) : base(Command.ID.hideNormalNpc)
+                public HideNormalNpc(settings.npcres.Controller normalNpc, bool destroyNode = false) : base(Command.ID.hideNormalNpc)
                 {
                     this.normalNpc = normalNpc;
+                    this.destroyNode = destroyNode;
                 }
             }
 
@@ -1089,6 +1093,13 @@ namespace game.resource.map
 
         private void Command_HideSpecialNpc(Textures.Command.HideSpecialNpc _command)
         {
+            this.miniMap.RemoveObject(_command.specialNpc);
+            if (_command.destroyNode)
+            {
+                this.DestroyNpcNode(_command.specialNpc, this.specialNpcs);
+                return;
+            }
+
             if (this.specialNpcs.ContainsKey(_command.specialNpc) == false)
             {
                 return;
@@ -1125,6 +1136,13 @@ namespace game.resource.map
 
         private void Command_HideNormalNpc(Textures.Command.HideNormalNpc _command)
         {
+            this.miniMap.RemoveObject(_command.normalNpc);
+            if (_command.destroyNode)
+            {
+                this.DestroyNpcNode(_command.normalNpc, this.normalNpcs);
+                return;
+            }
+
             if (this.normalNpcs.ContainsKey(_command.normalNpc) == false)
             {
                 return;
@@ -1137,6 +1155,46 @@ namespace game.resource.map
 
             _command.normalNpc.GetIdentify().GetAppearance().SetActive(false);
             _command.normalNpc.GetIdentify().GetAppearance().transform.SetParent(this.layers.hiddenTextures.transform);
+        }
+
+        private void DestroyNpcNode(
+            settings.npcres.Controller npcController,
+            Dictionary<settings.npcres.Controller, bool> storage)
+        {
+            if (npcController == null)
+            {
+                return;
+            }
+
+            storage.Remove(npcController);
+            this.npcList.Remove(npcController);
+            this.DestroyMissilesUsingNpc(npcController);
+            npcController.Destroy();
+        }
+
+        private void DestroyMissilesUsingNpc(settings.npcres.Controller npcController)
+        {
+            if (npcController == null)
+            {
+                return;
+            }
+
+            List<settings.skill.Missile> removeListing = new List<settings.skill.Missile>();
+            foreach (KeyValuePair<settings.skill.Missile, bool> missileEntry in this.missiles)
+            {
+                if (missileEntry.Key != null && missileEntry.Key.UsesNpc(npcController))
+                {
+                    removeListing.Add(missileEntry.Key);
+                }
+            }
+
+            foreach (settings.skill.Missile missile in removeListing)
+            {
+                this.missiles.Remove(missile);
+                UnityEngine.GameObject.Destroy(missile.GetAppearance());
+            }
+
+            this.missileThread.RemoveNpc(npcController);
         }
 
         private void Command_AddObj(Textures.Command.AddObj _command)
