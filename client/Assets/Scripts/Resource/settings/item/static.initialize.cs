@@ -201,7 +201,7 @@ namespace game.resource.settings.item
             for (int rowIndex = 1; rowIndex < fileTable.RowCount; rowIndex++)
             {
                 settings.item.GoldEquipBase platinaBase = new GoldEquipBase();
-                ((settings.item.EquipmentBase)platinaBase).Load(fileTable, rowIndex);
+                platinaBase.Load(fileTable, rowIndex);
                 result[rowIndex] = platinaBase;
             }
 

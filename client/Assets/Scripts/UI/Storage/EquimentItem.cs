@@ -164,6 +164,8 @@ public static class ItemDetailPopup
     private const string GoldMagicPath = "\\update10\\settings\\item\\004\\GoldMagic.txt";
     private static Dictionary<int, MagicAttribLevelInfo> magicAttribLevelByMagicId;
     private static Dictionary<int, GoldMagicInfo> goldMagicByRow;
+    private static readonly Dictionary<string, string> descriptionCache = new Dictionary<string, string>();
+    private static Font runtimeFont;
     private static readonly string[] EquipPartNames =
     {
         "Vũ khí",
@@ -228,7 +230,7 @@ public static class ItemDetailPopup
             : null;
 
         AddHeader(item, itemData);
-        string description = BuildDescription(item, itemData, itemDetail);
+        string description = BuildDescriptionCached(item, itemData, itemDetail);
         AddScrollText(description);
         AddButtons(item, itemData, cellIndex);
 
@@ -440,6 +442,103 @@ public static class ItemDetailPopup
         return NormalizeRichMarkup(builder.ToString()).Trim();
     }
 
+    private static string BuildDescriptionCached(game.resource.settings.Item item, ItemData itemData, ClassicItemSync itemDetail)
+    {
+        string cacheKey = BuildDescriptionCacheKey(item, itemData, itemDetail);
+        if (descriptionCache.TryGetValue(cacheKey, out string cachedDescription))
+        {
+            return cachedDescription;
+        }
+
+        string description = BuildDescription(item, itemData, itemDetail);
+        descriptionCache[cacheKey] = description;
+        return description;
+    }
+
+    private static string BuildDescriptionCacheKey(game.resource.settings.Item item, ItemData itemData, ClassicItemSync itemDetail)
+    {
+        StringBuilder key = new StringBuilder(256);
+        key.Append(item.GetDatabaseId())
+            .Append('|').Append(item.GetItemType())
+            .Append('|').Append(item.GetGDPLS());
+
+        if (itemData != null)
+        {
+            key.Append('|').Append(itemData.id)
+                .Append('|').Append(itemData.Stack)
+                .Append('|').Append(itemData.Durability)
+                .Append('|').Append(itemData.Enchance)
+                .Append('|').Append(itemData.Point)
+                .Append('|').Append(itemData.RongPoint)
+                .Append('|').Append(itemData.RandSeed)
+                .Append('|').Append(itemData.IsWhere)
+                .Append('|').Append(itemData.Year)
+                .Append('|').Append(itemData.Month)
+                .Append('|').Append(itemData.Day)
+                .Append('|').Append(itemData.Hour)
+                .Append('|').Append(itemData.Min)
+                .Append('|').Append(itemData.Local)
+                .Append('|').Append(itemData.X)
+                .Append('|').Append(itemData.Y);
+        }
+
+        if (itemDetail != null)
+        {
+            key.Append('|').Append(itemDetail.IsBangRaw)
+                .Append('|').Append(itemDetail.UseMap)
+                .Append('|').Append(itemDetail.UseKind)
+                .Append('|').Append(itemDetail.LockState)
+                .Append('|').Append(itemDetail.LockTime)
+                .Append('|').Append(itemDetail.TradePrice)
+                .Append('|').Append(itemDetail.IsWhere);
+
+            AppendMagicCacheKey(key, itemDetail.MagicAttribs);
+            AppendIntArrayCacheKey(key, itemDetail.RongMagicLevels);
+            AppendIntArrayCacheKey(key, itemDetail.JbLevels);
+        }
+
+        AppendGoldSetCacheKey(key, item);
+        return key.ToString();
+    }
+
+    private static void AppendMagicCacheKey(StringBuilder key, List<KMagicAttrib> magicAttribs)
+    {
+        if (magicAttribs == null)
+        {
+            return;
+        }
+
+        key.Append("|m");
+        for (int index = 0; index < magicAttribs.Count; index++)
+        {
+            KMagicAttrib attrib = magicAttribs[index];
+            key.Append(':').Append(attrib.nAttribType);
+            if (attrib.nValue == null)
+            {
+                key.Append(",0,0,0");
+                continue;
+            }
+
+            key.Append(',').Append(attrib.nValue.Length > 0 ? attrib.nValue[0] : 0)
+                .Append(',').Append(attrib.nValue.Length > 1 ? attrib.nValue[1] : 0)
+                .Append(',').Append(attrib.nValue.Length > 2 ? attrib.nValue[2] : 0);
+        }
+    }
+
+    private static void AppendIntArrayCacheKey(StringBuilder key, int[] values)
+    {
+        if (values == null)
+        {
+            return;
+        }
+
+        key.Append("|i");
+        for (int index = 0; index < values.Length; index++)
+        {
+            key.Append(':').Append(values[index]);
+        }
+    }
+
     private static string BuildTitle(game.resource.settings.Item item, ItemData itemData)
     {
         string name = NormalizeDisplayText(item.GetName());
@@ -586,11 +685,7 @@ public static class ItemDetailPopup
 
     private static void AppendItemInfo(StringBuilder builder, game.resource.settings.Item item, ClassicItemSync itemDetail)
     {
-        string info = itemDetail != null ? itemDetail.ItemInfo : null;
-        if (string.IsNullOrWhiteSpace(info) || string.Equals(info.Trim(), "null data", System.StringComparison.OrdinalIgnoreCase))
-        {
-            info = item.GetIntro();
-        }
+        string info = ResolveItemInfo(item, itemDetail);
 
         if (!string.IsNullOrWhiteSpace(info) && item.IsShowValue())
         {
@@ -602,6 +697,31 @@ public static class ItemDetailPopup
         {
             builder.AppendLine(ColorText(info, "#ffffff"));
         }
+    }
+
+    private static string ResolveItemInfo(game.resource.settings.Item item, ClassicItemSync itemDetail)
+    {
+        string localInfo = item.GetIntro();
+        if (IsUsableItemInfo(localInfo))
+        {
+            return localInfo;
+        }
+
+        string syncInfo = itemDetail != null ? itemDetail.ItemInfo : null;
+        return IsUsableItemInfo(syncInfo) ? syncInfo : string.Empty;
+    }
+
+    private static bool IsUsableItemInfo(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        string trimmed = value.Trim();
+        return !string.Equals(trimmed, "null data", System.StringComparison.OrdinalIgnoreCase)
+               && !string.Equals(trimmed, "暂无数据", System.StringComparison.OrdinalIgnoreCase)
+               && !trimmed.EndsWith(".lua", System.StringComparison.OrdinalIgnoreCase);
     }
 
     private static void AppendEnchantInfo(StringBuilder builder, game.resource.settings.Item item, ItemData itemData)
@@ -1254,19 +1374,158 @@ public static class ItemDetailPopup
 
     private static void AppendGoldSet(StringBuilder builder, game.resource.settings.Item item)
     {
-        Dictionary<int, string> setItems = item.GetSetItemList();
-        if (setItems == null || setItems.Count == 0)
+        Defination.Type itemType = item.GetItemType();
+        if (itemType != Defination.Type.goldEquip && itemType != Defination.Type.platinaEquip)
+        {
+            return;
+        }
+
+        GoldEquipBase goldBase = item.GetEquipmentBase() as GoldEquipBase;
+        if (goldBase == null || goldBase.setNum <= 0 || goldBase.idSet <= 0 || goldBase.setId <= 0)
+        {
+            return;
+        }
+
+        Dictionary<int, int> setColors = ResolveGoldSetColors(goldBase.set);
+        List<string> setLines = new List<string>();
+
+        for (int k = goldBase.setNum - 1; k >= 0; k--)
+        {
+            if (k >= 10)
+            {
+                continue;
+            }
+
+            int rowIndex = goldBase.idSet + 3 - goldBase.setId + k;
+            GoldEquipBase setItemBase = ResolveGoldSetBase(itemType, rowIndex);
+            if (setItemBase == null || string.IsNullOrWhiteSpace(setItemBase.name))
+            {
+                continue;
+            }
+
+            int setId = k + 1;
+            string color = ResolveGoldSetColor(setColors, setId);
+            setLines.Add(ColorText(NormalizeDisplayText(setItemBase.name), color));
+        }
+
+        if (setLines.Count == 0)
         {
             return;
         }
 
         AppendSeparator(builder);
-        foreach (string setItem in setItems.Values)
+        foreach (string setLine in setLines)
         {
-            if (!string.IsNullOrWhiteSpace(setItem))
+            builder.AppendLine(setLine);
+        }
+    }
+
+    private static GoldEquipBase ResolveGoldSetBase(Defination.Type itemType, int rowIndex)
+    {
+        if (rowIndex <= 0)
+        {
+            return null;
+        }
+
+        return itemType == Defination.Type.platinaEquip
+            ? Getters.GetPlatinaEquipBase(rowIndex)
+            : Getters.GetGoldEquipBase(rowIndex);
+    }
+
+    private static Dictionary<int, int> ResolveGoldSetColors(int set)
+    {
+        Dictionary<int, int> result = new Dictionary<int, int>();
+        if (set <= 0)
+        {
+            return result;
+        }
+
+        Dictionary<uint, ItemData> playerItems = PhotonManager.Instance.GetPlayerItems();
+        if (playerItems == null || playerItems.Count == 0)
+        {
+            return result;
+        }
+
+        List<ItemData> snapshot = new List<ItemData>(playerItems.Values);
+        for (int index = 0; index < snapshot.Count; index++)
+        {
+            ItemData playerItem = snapshot[index];
+            GoldEquipBase playerGoldBase = ResolvePlayerGoldBase(playerItem);
+            if (playerGoldBase == null || playerGoldBase.set != set || playerGoldBase.setId <= 0)
             {
-                builder.AppendLine(ColorText(NormalizeDisplayText(setItem), "#eabd0b"));
+                continue;
             }
+
+            int colorState = playerItem.Local == (byte)ItemPosition.pos_equip ? 2 : 1;
+            if (!result.TryGetValue(playerGoldBase.setId, out int currentState) || colorState > currentState)
+            {
+                result[playerGoldBase.setId] = colorState;
+            }
+        }
+
+        return result;
+    }
+
+    private static GoldEquipBase ResolvePlayerGoldBase(ItemData itemData)
+    {
+        if (itemData == null ||
+            itemData.Equipclasscode != (byte)Defination.Genre.item_equip ||
+            itemData.IdGold <= 0)
+        {
+            return null;
+        }
+
+        return itemData.IsPlasma
+            ? Getters.GetPlatinaEquipBase(itemData.IdGold)
+            : Getters.GetGoldEquipBase(itemData.IdGold);
+    }
+
+    private static string ResolveGoldSetColor(Dictionary<int, int> setColors, int setId)
+    {
+        int colorState = 0;
+        if (setColors != null)
+        {
+            setColors.TryGetValue(setId, out colorState);
+        }
+
+        switch (colorState)
+        {
+            case 1:
+                return "#00af00";
+
+            case 2:
+                return "#00ff00";
+
+            default:
+                return "#6e6e00";
+        }
+    }
+
+    private static void AppendGoldSetCacheKey(StringBuilder key, game.resource.settings.Item item)
+    {
+        Defination.Type itemType = item.GetItemType();
+        if (itemType != Defination.Type.goldEquip && itemType != Defination.Type.platinaEquip)
+        {
+            return;
+        }
+
+        GoldEquipBase goldBase = item.GetEquipmentBase() as GoldEquipBase;
+        if (goldBase == null || goldBase.set <= 0 || goldBase.setNum <= 0)
+        {
+            return;
+        }
+
+        Dictionary<int, int> setColors = ResolveGoldSetColors(goldBase.set);
+        key.Append("|goldset=").Append(goldBase.set);
+        for (int setId = 1; setId <= goldBase.setNum && setId <= 10; setId++)
+        {
+            int colorState = 0;
+            if (setColors != null)
+            {
+                setColors.TryGetValue(setId, out colorState);
+            }
+
+            key.Append(':').Append(setId).Append('=').Append(colorState);
         }
     }
 
@@ -1739,7 +1998,7 @@ public static class ItemDetailPopup
         go.transform.SetParent(parent, false);
 
         Text text = go.GetComponent<Text>();
-        text.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        text.font = ResolveRuntimeFont();
         text.fontSize = fontSize;
         text.fontStyle = fontStyle;
         text.alignment = alignment;
@@ -1748,6 +2007,39 @@ public static class ItemDetailPopup
         text.horizontalOverflow = HorizontalWrapMode.Wrap;
         text.verticalOverflow = VerticalWrapMode.Truncate;
         return text;
+    }
+
+    private static Font ResolveRuntimeFont()
+    {
+        if (runtimeFont != null)
+        {
+            return runtimeFont;
+        }
+
+        runtimeFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        if (runtimeFont != null)
+        {
+            return runtimeFont;
+        }
+
+        runtimeFont = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        if (runtimeFont != null)
+        {
+            return runtimeFont;
+        }
+
+        try
+        {
+            runtimeFont = Font.CreateDynamicFontFromOSFont(
+                new[] { "Segoe UI", "Arial", "Tahoma" },
+                18);
+        }
+        catch
+        {
+            runtimeFont = null;
+        }
+
+        return runtimeFont;
     }
 
     private static void AddButton(Transform parent, string title, System.Action action)
