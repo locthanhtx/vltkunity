@@ -358,6 +358,25 @@ public class PlayerMain : CharacterClick, IMainPlayerClientListener
         ChangeEquip(item.GetDatabaseId(), true);
     }
 
+    public void RequestUseItemFromBag(Item item, ItemData itemData, int bagCellIndex)
+    {
+        if (itemData == null || itemData.id == 0)
+        {
+            Debug.LogWarning("PlayerMain use item skipped. missing item data.");
+            return;
+        }
+
+        this.item = item;
+        this.bagCellIndex = bagCellIndex;
+
+        if (PhotonManager.Instance != null && PhotonManager.Instance.RequestClassicUseItem(itemData.id))
+        {
+            return;
+        }
+
+        Debug.LogWarning("PlayerMain use item skipped. classic client is not ready id=" + itemData.id);
+    }
+
     public void EquipItemToPlayer(Item item)
     {
         EquipmentBase equipmentBase = item.GetEquipmentBase();

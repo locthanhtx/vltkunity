@@ -22,7 +22,10 @@ namespace game.network.jx
         private const byte C2SNpcWalk = 75;
         private const byte C2SNpcRun = 76;
         private const byte C2SNpcSkill = 77;
+        private const byte C2SPlayerEatItem = 97;
+        private const byte C2SPlayerSelectUi = 103;
         private const byte C2SDbPlayerSelect = 108;
+        private const byte C2SDialogNpc = 118;
         private const byte C2SPing = 122;
         private const byte C2SCpLock = 124;
         private const byte C2SNpcRide = 140;
@@ -76,6 +79,7 @@ namespace game.network.jx
         private const byte S2CSyncMoney = 120;
         private const byte S2CSyncXu = 121;
         private const byte S2CPlayerMoveItem = 122;
+        private const byte S2CScriptAction = 123;
         private const byte S2CSkillPropPointSync = 221;
         private const int CipherFrameSize = 34;
         private const int AccountBeginSize = 32;
@@ -93,6 +97,27 @@ namespace game.network.jx
         private const int MaxPlayerInAccount = 3;
         private const int MaxSeriesCount = 5;
         private const int NameLength = 64;
+        private const int WorldSyncPacketSize = 304;
+        private const int WorldSyncSubWorldOffset = 1;
+        private const int WorldSyncRegionOffset = 5;
+        private const int WorldSyncWeatherOffset = 9;
+        private const int WorldSyncFrameOffset = 10;
+        private const int WorldSyncSRegionOffset = 14;
+        private const int WorldSyncWarMasterOffset = 18;
+        private const int WorldSyncWarTongOffset = WorldSyncWarMasterOffset + NameLength;
+        private const int WorldSyncWarGongTongOffset = WorldSyncWarTongOffset + NameLength;
+        private const int WorldSyncWarShouTongOffset = WorldSyncWarGongTongOffset + NameLength;
+        private const int WorldSyncWarIsWhoOffset = WorldSyncWarShouTongOffset + NameLength;
+        private const int WorldSyncShuiTypeOffset = WorldSyncWarIsWhoOffset + 1;
+        private const int WorldSyncIsWarCityOffset = WorldSyncShuiTypeOffset + sizeof(int);
+        private const int WorldSyncWarCityMoneyOffset = WorldSyncIsWarCityOffset + 1;
+        private const int WorldSyncWarCityJbOffset = WorldSyncWarCityMoneyOffset + sizeof(int);
+        private const int WorldSyncWarCityGxOffset = WorldSyncWarCityJbOffset + sizeof(int);
+        private const int WorldSyncWpkFlagOffset = WorldSyncWarCityGxOffset + sizeof(int);
+        private const int WorldSyncIsShowLoopOffset = WorldSyncWpkFlagOffset + sizeof(int);
+        private const int WorldSyncGameStatOffset = WorldSyncIsShowLoopOffset + sizeof(int);
+        private const int ClassicRegionMpsWidth = 512;
+        private const int ClassicRegionMpsHeight = 1024;
         private const int NpcRequestCommandSize = 1 + sizeof(uint) + NameLength;
         private const uint ClassicMobileKey = 54354353;
         private static readonly Encoding StrictUtf8Encoding = new UTF8Encoding(false, true);
@@ -149,6 +174,14 @@ namespace game.network.jx
         private const int SyncAllSkillLengthFieldSize = 2;
         private const int SyncAllSkillEntrySize = 8;
         private const int SyncAllSkillMaxCount = 80;
+        private const int ScriptActionHeaderSize = 145;
+        private const int ScriptActionSprPathOffset = 17;
+        private const int ScriptActionSprPathSize = 128;
+        private const int ScriptActionContentOffset = 145;
+        private const int ScriptActionMaxContentSize = 1024;
+        private const byte ScriptActionUiShow = 0;
+        private const byte UiSelectDialog = 0;
+        private const byte UiTalkDialog = 2;
         private const int MaxQueuedWorldEvents = 8192;
         private bool worldReceiveLoopRunning;
         private bool cpLockSent;
@@ -442,6 +475,36 @@ namespace game.network.jx
             await SendPacketAsync(BuildAutoEquipPacket(itemId, kind, place, x, y));
         }
 
+        public async Task SendDialogNpcAsync(int npcId)
+        {
+            if (!IsConnected || npcId <= 0)
+            {
+                return;
+            }
+
+            await SendPacketAsync(BuildDialogNpcPacket(npcId));
+        }
+
+        public async Task SendPlayerSelectUiAsync(int selectIndex)
+        {
+            if (!IsConnected)
+            {
+                return;
+            }
+
+            await SendPacketAsync(BuildPlayerSelectUiPacket(selectIndex));
+        }
+
+        public async Task SendEatItemAsync(uint itemId, int place, int x, int y)
+        {
+            if (!IsConnected || itemId == 0)
+            {
+                return;
+            }
+
+            await SendPacketAsync(BuildPlayerEatItemPacket(itemId, place, x, y));
+        }
+
         public static string TranslateDisplayString(string value)
         {
             if (string.IsNullOrEmpty(value))
@@ -579,6 +642,11 @@ namespace game.network.jx
             }
 
             byte protocol = payload[offset];
+            if (protocol == S2CScriptAction)
+            {
+                return GetScriptActionPacketSize(payload, offset, remaining);
+            }
+
             if (IsLengthPrefixedS2CPacket(protocol))
             {
                 return GetLengthPrefixedS2CPacketSize(payload, offset, remaining, protocol);
@@ -616,6 +684,25 @@ namespace game.network.jx
                    protocol == S2CSyncStateEffect ||
                    protocol == 162 || // s2c_pksyncenmitystate
                    protocol == 163;   // s2c_pksyncexercisestate
+        }
+
+        private static int GetScriptActionPacketSize(byte[] payload, int offset, int remaining)
+        {
+            if (remaining < 3)
+            {
+                return 0;
+            }
+
+            int protocolLong = BitConverter.ToUInt16(payload, offset + 1);
+            int minProtocolLong = ScriptActionHeaderSize - 1;
+            int maxProtocolLong = (ScriptActionHeaderSize - 1) + ScriptActionMaxContentSize;
+            if (protocolLong < minProtocolLong || protocolLong > maxProtocolLong)
+            {
+                return 0;
+            }
+
+            int packetSize = 1 + protocolLong;
+            return packetSize <= remaining ? packetSize : 0;
         }
 
         private static int GetLengthPrefixedS2CPacketSize(byte[] payload, int offset, int remaining, byte protocol)
@@ -661,6 +748,11 @@ namespace game.network.jx
             }
 
             byte protocol = payload[offset];
+            if (protocol == S2CScriptAction)
+            {
+                return CanStartScriptActionPacket(payload, offset, remaining);
+            }
+
             int fixedSize = GetS2CFixedPacketSize(protocol);
             if (fixedSize > 0)
             {
@@ -677,6 +769,29 @@ namespace game.network.jx
                    (1 + protocolLong <= remaining || protocolLong <= remaining);
         }
 
+        private static bool CanStartScriptActionPacket(byte[] payload, int offset, int remaining)
+        {
+            int packetSize = GetScriptActionPacketSize(payload, offset, remaining);
+            if (packetSize <= 0 || remaining < ScriptActionHeaderSize)
+            {
+                return false;
+            }
+
+            byte operateType = payload[offset + 3];
+            if (operateType > 1)
+            {
+                return false;
+            }
+
+            int bufferLen = BitConverter.ToInt32(payload, offset + 13);
+            if (bufferLen < 0 || bufferLen > ScriptActionMaxContentSize)
+            {
+                return false;
+            }
+
+            return packetSize - ScriptActionContentOffset >= bufferLen;
+        }
+
         private static int GetS2CFixedPacketSize(byte protocol)
         {
             switch (protocol)
@@ -688,7 +803,7 @@ namespace game.network.jx
                 case S2CSyncCurPlayerNormal:
                     return 31;
                 case S2CSyncWorld:
-                    return 304;
+                    return WorldSyncPacketSize;
                 case S2CSyncPlayer:
                     return 211;
                 case S2CSyncPlayerMin:
@@ -907,6 +1022,39 @@ namespace game.network.jx
             WriteInt32(packet, ref offset, skillId);
             WriteInt32(packet, ref offset, mpsX);
             WriteInt32(packet, ref offset, mpsY);
+            return packet;
+        }
+
+        private static byte[] BuildDialogNpcPacket(int npcId)
+        {
+            byte[] packet = new byte[1 + sizeof(int)];
+            packet[0] = C2SDialogNpc;
+
+            int offset = 1;
+            WriteInt32(packet, ref offset, npcId);
+            return packet;
+        }
+
+        private static byte[] BuildPlayerSelectUiPacket(int selectIndex)
+        {
+            byte[] packet = new byte[1 + sizeof(int)];
+            packet[0] = C2SPlayerSelectUi;
+
+            int offset = 1;
+            WriteInt32(packet, ref offset, selectIndex);
+            return packet;
+        }
+
+        private static byte[] BuildPlayerEatItemPacket(uint itemId, int place, int x, int y)
+        {
+            byte[] packet = new byte[1 + sizeof(byte) + sizeof(byte) + sizeof(byte) + sizeof(int)];
+            packet[0] = C2SPlayerEatItem;
+            packet[1] = ClampByte(place);
+            packet[2] = ClampByte(x);
+            packet[3] = ClampByte(y);
+
+            int offset = 4;
+            WriteUInt32(packet, ref offset, itemId);
             return packet;
         }
 
@@ -1284,6 +1432,26 @@ namespace game.network.jx
                     }
                     break;
 
+                case S2CSyncWorld:
+                    if (TryParseWorldSync(packet, out ClassicWorldSync worldSync))
+                    {
+                        EnqueueWorldEvent(new ClassicWorldEvent
+                        {
+                            Type = ClassicWorldEventType.WorldSync,
+                            World = worldSync
+                        });
+                        Debug.Log("JxClassicClient << world sync map=" + worldSync.SubWorld +
+                                  " region=" + worldSync.Region +
+                                  " sRegion=" + worldSync.SRegion +
+                                  " sRegionXY=" + worldSync.SRegionX + "," + worldSync.SRegionY +
+                                  " weather=" + worldSync.Weather +
+                                  " frame=" + worldSync.Frame +
+                                  " wpk=" + worldSync.WpkFlag +
+                                  " showLoop=" + worldSync.IsShowLoop +
+                                  " gameStat=" + worldSync.GameStat);
+                    }
+                    break;
+
                 case S2CSyncPlayer:
                     if (TryParseFullPlayerSync(packet, out ClassicPlayerSync fullPlayerSync))
                     {
@@ -1625,6 +1793,23 @@ namespace game.network.jx
                             Type = ClassicWorldEventType.ItemMoveSync,
                             ItemMove = itemMoveSync
                         });
+                    }
+                    break;
+
+                case S2CScriptAction:
+                    if (TryParseScriptAction(packet, out ClassicScriptDialog scriptDialog))
+                    {
+                        EnqueueWorldEvent(new ClassicWorldEvent
+                        {
+                            Type = ClassicWorldEventType.ScriptDialogSync,
+                            ScriptDialog = scriptDialog
+                        });
+                        Debug.Log("JxClassicClient << script dialog ui=" + scriptDialog.UiId +
+                                  " question=" + scriptDialog.IsQuestion +
+                                  " options=" + (scriptDialog.Answers != null ? scriptDialog.Answers.Count : 0) +
+                                  " pages=" + (scriptDialog.TalkPages != null ? scriptDialog.TalkPages.Count : 0) +
+                                  " server=" + scriptDialog.RequiresServerResponse +
+                                  " param=" + scriptDialog.Param);
                     }
                     break;
 
@@ -2063,11 +2248,13 @@ namespace game.network.jx
                    worldEvent.Type == ClassicWorldEventType.NpcRemoveSync ||
                    worldEvent.Type == ClassicWorldEventType.CurrentPlayerSync ||
                    worldEvent.Type == ClassicWorldEventType.CurrentPlayerNormalSync ||
+                   worldEvent.Type == ClassicWorldEventType.WorldSync ||
                    worldEvent.Type == ClassicWorldEventType.PlayerAttributeSync ||
                    worldEvent.Type == ClassicWorldEventType.PlayerLevelUpSync ||
                    worldEvent.Type == ClassicWorldEventType.ItemSync ||
                    worldEvent.Type == ClassicWorldEventType.ItemRemoveSync ||
                    worldEvent.Type == ClassicWorldEventType.ItemMoveSync ||
+                   worldEvent.Type == ClassicWorldEventType.ScriptDialogSync ||
                    worldEvent.Type == ClassicWorldEventType.MoneySync ||
                    worldEvent.Type == ClassicWorldEventType.XuSync;
         }
@@ -2122,14 +2309,84 @@ namespace game.network.jx
 
         private static void ParseWorldSync(byte[] packet, GameLoginResult result, CharacterData characterData)
         {
-            if (packet.Length < 19)
+            if (!TryParseWorldSync(packet, out ClassicWorldSync sync))
             {
                 return;
             }
 
-            int mapId = ReadPositiveInt32(packet, 1, 0);
-            result.MapId = mapId;
-            characterData.MapId = (ushort)Math.Max(0, Math.Min(ushort.MaxValue, mapId));
+            result.MapId = sync.SubWorld;
+            characterData.MapId = (ushort)Math.Max(0, Math.Min(ushort.MaxValue, sync.SubWorld));
+            if ((result.MapX <= 0 || result.MapY <= 0) &&
+                TryResolveWorldSyncRegionCenter(sync, out int regionMpsX, out int regionMpsY))
+            {
+                result.MapX = regionMpsX;
+                result.MapY = regionMpsY;
+                characterData.MapX = regionMpsX;
+                characterData.MapY = regionMpsY;
+            }
+
+            Debug.Log("JxClassicClient << world sync login map=" + sync.SubWorld +
+                      " region=" + sync.Region +
+                      " sRegion=" + sync.SRegion +
+                      " sRegionXY=" + sync.SRegionX + "," + sync.SRegionY +
+                      " weather=" + sync.Weather +
+                      " frame=" + sync.Frame +
+                      " wpk=" + sync.WpkFlag +
+                      " showLoop=" + sync.IsShowLoop +
+                      " gameStat=" + sync.GameStat +
+                      " mapX=" + result.MapX +
+                      " mapY=" + result.MapY);
+        }
+
+        private static bool TryParseWorldSync(byte[] packet, out ClassicWorldSync sync)
+        {
+            sync = null;
+            if (packet == null || packet.Length < WorldSyncPacketSize)
+            {
+                return false;
+            }
+
+            int sRegion = ReadInt32OrDefault(packet, WorldSyncSRegionOffset, 0);
+            sync = new ClassicWorldSync
+            {
+                Protocol = packet[0],
+                SubWorld = ReadInt32OrDefault(packet, WorldSyncSubWorldOffset, 0),
+                Region = ReadInt32OrDefault(packet, WorldSyncRegionOffset, 0),
+                Weather = packet[WorldSyncWeatherOffset],
+                Frame = BitConverter.ToUInt32(packet, WorldSyncFrameOffset),
+                SRegion = sRegion,
+                SRegionX = sRegion & 0xffff,
+                SRegionY = unchecked((int)((uint)sRegion >> 16)),
+                WarMaster = ReadNullTerminated(packet, WorldSyncWarMasterOffset, NameLength),
+                WarTong = ReadNullTerminated(packet, WorldSyncWarTongOffset, NameLength),
+                WarGongTong = ReadNullTerminated(packet, WorldSyncWarGongTongOffset, NameLength),
+                WarShouTong = ReadNullTerminated(packet, WorldSyncWarShouTongOffset, NameLength),
+                WarIsWho = packet[WorldSyncWarIsWhoOffset],
+                ShuiType = ReadInt32OrDefault(packet, WorldSyncShuiTypeOffset, 0),
+                IsWarCity = packet[WorldSyncIsWarCityOffset] != 0,
+                WarCityMoney = ReadInt32OrDefault(packet, WorldSyncWarCityMoneyOffset, 0),
+                WarCityJb = ReadInt32OrDefault(packet, WorldSyncWarCityJbOffset, 0),
+                WarCityGx = ReadInt32OrDefault(packet, WorldSyncWarCityGxOffset, 0),
+                WpkFlag = ReadInt32OrDefault(packet, WorldSyncWpkFlagOffset, 0),
+                IsShowLoop = ReadInt32OrDefault(packet, WorldSyncIsShowLoopOffset, 0) != 0,
+                GameStat = ReadInt32OrDefault(packet, WorldSyncGameStatOffset, 0)
+            };
+
+            return sync.SubWorld > 0;
+        }
+
+        private static bool TryResolveWorldSyncRegionCenter(ClassicWorldSync sync, out int mpsX, out int mpsY)
+        {
+            mpsX = 0;
+            mpsY = 0;
+            if (sync == null || sync.SRegion <= 0 || sync.SRegionX < 0 || sync.SRegionY < 0)
+            {
+                return false;
+            }
+
+            mpsX = (sync.SRegionX * ClassicRegionMpsWidth) + (ClassicRegionMpsWidth / 2);
+            mpsY = (sync.SRegionY * ClassicRegionMpsHeight) + (ClassicRegionMpsHeight / 2);
+            return mpsX > 0 && mpsY > 0;
         }
 
         private static void ParseCurrentPlayer(byte[] packet, GameLoginResult result, CharacterData characterData)
@@ -3162,6 +3419,161 @@ namespace game.network.jx
             return true;
         }
 
+        private static bool TryParseScriptAction(byte[] packet, out ClassicScriptDialog dialog)
+        {
+            dialog = null;
+            if (packet == null || packet.Length < ScriptActionHeaderSize)
+            {
+                return false;
+            }
+
+            int protocolLong = BitConverter.ToUInt16(packet, 1);
+            int packetLength = protocolLong > 0
+                ? Math.Min(packet.Length, 1 + protocolLong)
+                : packet.Length;
+
+            byte operateType = packet[3];
+            byte uiId = packet[4];
+            byte optionCount = packet[5];
+            byte param1 = packet[6];
+            byte param2 = packet[7];
+            byte select = packet[8];
+            int param = BitConverter.ToInt32(packet, 9);
+            int bufferLen = BitConverter.ToInt32(packet, 13);
+
+            if (operateType != ScriptActionUiShow ||
+                bufferLen <= 0 ||
+                bufferLen > ScriptActionMaxContentSize ||
+                ScriptActionContentOffset >= packetLength)
+            {
+                return false;
+            }
+
+            int contentLength = Math.Min(bufferLen, packetLength - ScriptActionContentOffset);
+            if (contentLength <= 0)
+            {
+                return false;
+            }
+
+            string spritePath = ReadNullTerminated(packet, ScriptActionSprPathOffset, ScriptActionSprPathSize);
+            bool requiresServerResponse = param2 >= 1;
+
+            if (uiId == UiSelectDialog)
+            {
+                string content;
+                string question;
+                if (param1 == 1 && contentLength >= sizeof(int))
+                {
+                    int questionResourceId = BitConverter.ToInt32(packet, ScriptActionContentOffset);
+                    content = DecodeProtocolString(
+                        packet,
+                        ScriptActionContentOffset + sizeof(int),
+                        contentLength - sizeof(int));
+                    question = "#" + questionResourceId;
+                }
+                else
+                {
+                    content = DecodeProtocolString(packet, ScriptActionContentOffset, contentLength);
+                    question = string.Empty;
+                }
+
+                List<string> parts = SplitScriptContent(content, optionCount + 1);
+                if (param1 == 0)
+                {
+                    question = parts.Count > 0 ? parts[0] : content;
+                }
+
+                List<string> answers = new List<string>();
+                int firstAnswerIndex = param1 == 0 ? 1 : 0;
+                for (int index = firstAnswerIndex; index < parts.Count; index++)
+                {
+                    if (answers.Count >= optionCount)
+                    {
+                        break;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(parts[index]))
+                    {
+                        answers.Add(parts[index]);
+                    }
+                }
+
+                dialog = new ClassicScriptDialog
+                {
+                    IsQuestion = true,
+                    RequiresServerResponse = requiresServerResponse,
+                    SpritePath = spritePath,
+                    Question = question,
+                    Answers = answers,
+                    TalkPages = new List<string>(),
+                    Param = param,
+                    UiId = uiId,
+                    OptionCount = optionCount,
+                    Param1 = param1,
+                    Param2 = param2,
+                    Select = select
+                };
+                return true;
+            }
+
+            if (uiId == UiTalkDialog)
+            {
+                string content = DecodeProtocolString(packet, ScriptActionContentOffset, contentLength);
+                List<string> pages = SplitScriptContent(content, optionCount);
+                if (pages.Count == 0)
+                {
+                    pages.Add(content);
+                }
+
+                dialog = new ClassicScriptDialog
+                {
+                    IsQuestion = false,
+                    RequiresServerResponse = requiresServerResponse,
+                    SpritePath = spritePath,
+                    Question = string.Empty,
+                    Answers = new List<string>(),
+                    TalkPages = pages,
+                    Param = param,
+                    UiId = uiId,
+                    OptionCount = optionCount,
+                    Param1 = param1,
+                    Param2 = param2,
+                    Select = select
+                };
+                return true;
+            }
+
+            return false;
+        }
+
+        private static List<string> SplitScriptContent(string content, int maxParts)
+        {
+            List<string> parts = new List<string>();
+            if (string.IsNullOrEmpty(content))
+            {
+                return parts;
+            }
+
+            string[] split = content.Split(new[] { '|' }, StringSplitOptions.None);
+            for (int index = 0; index < split.Length; index++)
+            {
+                if (maxParts > 0 && parts.Count >= maxParts)
+                {
+                    break;
+                }
+
+                string part = split[index];
+                if (string.IsNullOrWhiteSpace(part))
+                {
+                    continue;
+                }
+
+                parts.Add(part.Trim());
+            }
+
+            return parts;
+        }
+
         private static bool TryParseAutoEquipSync(byte[] packet, out ClassicAutoEquipSync sync)
         {
             sync = null;
@@ -3902,6 +4314,7 @@ namespace game.network.jx
     {
         CurrentPlayerSync,
         CurrentPlayerNormalSync,
+        WorldSync,
         NpcFullSync,
         NpcNormalSync,
         PlayerFullSync,
@@ -3917,6 +4330,7 @@ namespace game.network.jx
         MoneySync,
         XuSync,
         ItemMoveSync,
+        ScriptDialogSync,
         AutoEquipSync,
         SkillPropPointSync,
         PlayerExpSync,
@@ -3930,6 +4344,7 @@ namespace game.network.jx
         public ClassicWorldEventType Type;
         public ClassicCurrentPlayerSync CurrentPlayer;
         public CharacterData Character;
+        public ClassicWorldSync World;
         public ClassicNpcSync Npc;
         public ClassicPlayerSync Player;
         public ClassicNpcPositionSync Position;
@@ -3944,12 +4359,38 @@ namespace game.network.jx
         public ClassicMoneySync Money;
         public ClassicXuSync Xu;
         public ClassicItemMoveSync ItemMove;
+        public ClassicScriptDialog ScriptDialog;
         public ClassicAutoEquipSync AutoEquip;
         public ClassicSkillPropPointSync SkillPropPoint;
         public ClassicPlayerExpSync PlayerExp;
         public ClassicLeadExpSync LeadExp;
         public ClassicPlayerLevelUpSync LevelUp;
         public ClassicSkillCastSync SkillCast;
+    }
+
+    public sealed class ClassicWorldSync
+    {
+        public byte Protocol;
+        public int SubWorld;
+        public int Region;
+        public byte Weather;
+        public uint Frame;
+        public int SRegion;
+        public int SRegionX;
+        public int SRegionY;
+        public string WarMaster;
+        public string WarTong;
+        public string WarGongTong;
+        public string WarShouTong;
+        public byte WarIsWho;
+        public int ShuiType;
+        public bool IsWarCity;
+        public int WarCityMoney;
+        public int WarCityJb;
+        public int WarCityGx;
+        public int WpkFlag;
+        public bool IsShowLoop;
+        public int GameStat;
     }
 
     public sealed class ClassicPlayerExpSync
@@ -4051,6 +4492,22 @@ namespace game.network.jx
         public int DownContainer;
         public int UpContainer;
         public bool IsPanel;
+    }
+
+    public sealed class ClassicScriptDialog
+    {
+        public bool IsQuestion;
+        public bool RequiresServerResponse;
+        public string SpritePath;
+        public string Question;
+        public List<string> Answers;
+        public List<string> TalkPages;
+        public int Param;
+        public byte UiId;
+        public byte OptionCount;
+        public byte Param1;
+        public byte Param2;
+        public byte Select;
     }
 
     public sealed class ClassicAutoEquipSync

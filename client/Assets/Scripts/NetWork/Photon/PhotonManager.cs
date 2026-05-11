@@ -368,6 +368,10 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
                         ApplyClassicCurrentPlayerNormalSync(worldEvent.Character);
                         break;
 
+                    case ClassicWorldEventType.WorldSync:
+                        ApplyClassicWorldSync(worldEvent.World);
+                        break;
+
                     case ClassicWorldEventType.NpcFullSync:
                         ApplyClassicNpcSync(worldEvent.Npc, true);
                         break;
@@ -423,6 +427,10 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
 
                     case ClassicWorldEventType.ItemMoveSync:
                         ApplyClassicItemMoveSync(worldEvent.ItemMove);
+                        break;
+
+                    case ClassicWorldEventType.ScriptDialogSync:
+                        ApplyClassicScriptDialog(worldEvent.ScriptDialog);
                         break;
 
                     case ClassicWorldEventType.AutoEquipSync:
@@ -685,6 +693,16 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         }
     }
 
+    private static void ApplyClassicScriptDialog(ClassicScriptDialog dialog)
+    {
+        if (dialog == null)
+        {
+            return;
+        }
+
+        PopUpCanvas.instance?.OpenNpcDialog(dialog);
+    }
+
     private void ApplyClassicAutoEquipSync(ClassicAutoEquipSync sync)
     {
         if (sync == null)
@@ -770,6 +788,74 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         {
             character = new CharacterData();
         }
+    }
+
+    private void ApplyClassicWorldSync(ClassicWorldSync sync)
+    {
+        if (sync == null || sync.SubWorld <= 0)
+        {
+            return;
+        }
+
+        bool mapChanged = MapId != sync.SubWorld;
+        MapId = (ushort)Math.Max(1, Math.Min(ushort.MaxValue, sync.SubWorld));
+        ClassicWorldRegion = sync.Region;
+        ClassicWorldSRegion = sync.SRegion;
+        ClassicWorldSRegionX = sync.SRegionX;
+        ClassicWorldSRegionY = sync.SRegionY;
+        ClassicWorldWeather = sync.Weather;
+        ClassicWorldFrame = sync.Frame;
+        ClassicWorldWpkFlag = sync.WpkFlag;
+        ClassicWorldIsShowLoop = sync.IsShowLoop;
+        ClassicWorldGameStat = sync.GameStat;
+
+        EnsureClassicCharacter();
+        character.MapId = MapId;
+
+        if (mapChanged && TryResolveClassicRegionCenter(sync, out int regionMpsX, out int regionMpsY))
+        {
+            MapX = regionMpsX;
+            MapY = regionMpsY;
+            character.MapX = regionMpsX;
+            character.MapY = regionMpsY;
+        }
+
+        Debug.Log("JxClassicClient apply world sync. map=" + sync.SubWorld +
+                  " changed=" + mapChanged +
+                  " region=" + sync.Region +
+                  " sRegion=" + sync.SRegion +
+                  " sRegionXY=" + sync.SRegionX + "," + sync.SRegionY +
+                  " weather=" + sync.Weather +
+                  " frame=" + sync.Frame +
+                  " wpk=" + sync.WpkFlag +
+                  " showLoop=" + sync.IsShowLoop +
+                  " gameStat=" + sync.GameStat +
+                  " mapX=" + MapX +
+                  " mapY=" + MapY);
+
+        if (!mapChanged)
+        {
+            return;
+        }
+
+        CharMgrs?.ChangeWorld();
+        NpcMgrs?.ChangeWorld();
+    }
+
+    private static bool TryResolveClassicRegionCenter(ClassicWorldSync sync, out int mpsX, out int mpsY)
+    {
+        mpsX = 0;
+        mpsY = 0;
+        if (sync == null || sync.SRegion <= 0 || sync.SRegionX < 0 || sync.SRegionY < 0)
+        {
+            return false;
+        }
+
+        const int regionMpsWidth = 512;
+        const int regionMpsHeight = 1024;
+        mpsX = (sync.SRegionX * regionMpsWidth) + (regionMpsWidth / 2);
+        mpsY = (sync.SRegionY * regionMpsHeight) + (regionMpsHeight / 2);
+        return mpsX > 0 && mpsY > 0;
     }
 
     private static byte ClampByte(int value)
@@ -1154,6 +1240,8 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         {
             character.FightMode = (sync.Flags & 0x02) != 0;
             character.Sect = (byte)Math.Max(0, Math.Min(255, sync.Faction));
+            ClassicMainPlayerExItemId = sync.ExItemId;
+            ClassicMainPlayerExBoxId = sync.ExBoxId;
         }
 
         Debug.Log("JxClassicClient applied player sync. id=" + sync.Id +
@@ -2305,6 +2393,30 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
                 LogClassicSkillPacket("JxClassicClient >> npc skill", skillId, skillLevel, skillMpsX, skillMpsY, skillSetting);
                 return true;
 
+            case OperationCode.NpcQuery:
+                if (parameters == null ||
+                    !parameters.TryGetValue((byte)ParamterCode.Id, out object npcIdValue))
+                {
+                    return false;
+                }
+
+                int dialogNpcId = Convert.ToInt32(npcIdValue);
+                FireAndForgetClassicSend(ClassicClient.SendDialogNpcAsync(dialogNpcId));
+                Debug.Log("JxClassicClient >> dialog npc id=" + dialogNpcId);
+                return true;
+
+            case OperationCode.NpcSelect:
+                if (parameters == null ||
+                    !parameters.TryGetValue((byte)ParamterCode.Data, out object selectIndexValue))
+                {
+                    return false;
+                }
+
+                int selectIndex = Convert.ToInt32(selectIndexValue);
+                FireAndForgetClassicSend(ClassicClient.SendPlayerSelectUiAsync(selectIndex));
+                Debug.Log("JxClassicClient >> select ui index=" + selectIndex);
+                return true;
+
             case OperationCode.AutoEquip:
                 if (parameters == null ||
                     !parameters.TryGetValue((byte)ParamterCode.ItemId, out object itemIdValue))
@@ -2353,6 +2465,31 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
 
         FireAndForgetClassicSend(ClassicClient.SendRideAsync());
         Debug.Log("JxClassicClient >> npc ride toggle");
+    }
+
+    public bool RequestClassicUseItem(uint itemId)
+    {
+        if (ClassicClient == null || !ClassicClient.IsConnected || itemId == 0)
+        {
+            return false;
+        }
+
+        if (!playerItems.TryGetValue(itemId, out ItemData item))
+        {
+            Debug.LogWarning("JxClassicClient use item skipped. item not found id=" + itemId);
+            return false;
+        }
+
+        FireAndForgetClassicSend(ClassicClient.SendEatItemAsync(
+            itemId,
+            item.Local,
+            item.X,
+            item.Y));
+        Debug.Log("JxClassicClient >> eat/use item id=" + itemId +
+                  " local=" + item.Local +
+                  " x=" + item.X +
+                  " y=" + item.Y);
+        return true;
     }
 
     private void CancelClassicAutoSkillCast()
@@ -2978,8 +3115,30 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
     public ushort MapId;
     [HideInInspector]
     public int MapX, MapY;
+    [HideInInspector]
+    public int ClassicWorldRegion;
+    [HideInInspector]
+    public int ClassicWorldSRegion;
+    [HideInInspector]
+    public int ClassicWorldSRegionX;
+    [HideInInspector]
+    public int ClassicWorldSRegionY;
+    [HideInInspector]
+    public byte ClassicWorldWeather;
+    [HideInInspector]
+    public uint ClassicWorldFrame;
+    [HideInInspector]
+    public int ClassicWorldWpkFlag;
+    [HideInInspector]
+    public bool ClassicWorldIsShowLoop;
+    [HideInInspector]
+    public int ClassicWorldGameStat;
     public int ClassicWalkSpeed { get; private set; } = 5;
     public int ClassicRunSpeed { get; private set; } = 10;
+    [HideInInspector]
+    public byte ClassicMainPlayerExItemId;
+    [HideInInspector]
+    public byte ClassicMainPlayerExBoxId;
 
     public CharacterData character = null;
     public CharacterData GetChracter() => character;

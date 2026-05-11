@@ -227,7 +227,18 @@ public class PopUpCanvas : MonoBehaviour
         if (NpcDialog != null)
         {
             NpcDialog.SetActive(true);
+            NpcDialog.transform.SetAsLastSibling();
             NpcDialog.GetComponent<NpcDialog>().SetNpcWithContent(sprite, npcId, npcName, name, data);
+        }
+    }
+
+    public void OpenNpcDialog(game.network.jx.ClassicScriptDialog dialog)
+    {
+        if (NpcDialog != null)
+        {
+            NpcDialog.SetActive(true);
+            NpcDialog.transform.SetAsLastSibling();
+            NpcDialog.GetComponent<NpcDialog>().SetClassicDialog(dialog);
         }
     }
 

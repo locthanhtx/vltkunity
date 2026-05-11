@@ -482,9 +482,11 @@ namespace game.scene
             {
                 game.resource.settings.NpcRes.Normal npcGameObject = Npcs[id];
                 string npcName = npcGameObject.GetAppearance().parent.GetComponent<NpcClick>().Name;
-                GameObject body = npcGameObject.GetAppearance().parent.transform.Find("Body").gameObject;
+                Transform bodyTransform = npcGameObject.GetAppearance().parent.transform.Find("Body");
 
-                Sprite sprite = body.GetComponent<SpriteRenderer>().sprite;
+                Sprite sprite = bodyTransform != null
+                    ? bodyTransform.GetComponent<SpriteRenderer>()?.sprite
+                    : null;
 
                 PopUpCanvas.instance.OpenNpcDialog(sprite, id, npcName, name, data);
             }
@@ -503,13 +505,18 @@ namespace game.scene
 
         public void NpcTalk(int id, string name, string data)
         {
-            //if (Npcs.ContainsKey(id))
-            //{
-            //    resource.settings.NpcRes.Normal nocGameObject = Npcs[id];
-            //    string npcName = nocGameObject.GetAppearance().parent.GetComponent<NpcClick>().Name;
+            if (Npcs.ContainsKey(id))
+            {
+                game.resource.settings.NpcRes.Normal npcGameObject = Npcs[id];
+                string npcName = npcGameObject.GetAppearance().parent.GetComponent<NpcClick>().Name;
+                Transform bodyTransform = npcGameObject.GetAppearance().parent.transform.Find("Body");
 
-            //    PopUpCanvas.PopUpCanvasInstance.OpenNpcDialog(npcName, name, data);
-            //}
+                Sprite sprite = bodyTransform != null
+                    ? bodyTransform.GetComponent<SpriteRenderer>()?.sprite
+                    : null;
+
+                PopUpCanvas.instance.OpenNpcDialog(sprite, id, npcName, name, data);
+            }
         }
     }
 }

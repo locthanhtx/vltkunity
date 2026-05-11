@@ -159,6 +159,13 @@ public static class ItemDetailPopup
     private const int MagicRequireSex = 38;
     private const int MagicRequireFaction = 39;
     private const int EquipMaskDetail = 11;
+    private const byte ItemPositionEquip = 2;
+    private const byte ItemPositionBag = 3;
+    private const byte ItemPositionStorage = 4;
+    private const int MaxButtonColumns = 4;
+    private const float ButtonWidth = 100f;
+    private const float ButtonHeight = 36f;
+    private const float ButtonSpacing = 8f;
     private const string SeparatorText = "-----------------------------------";
     private const string MagicAttribLevelPath = "\\update10\\settings\\item\\004\\magicattriblevel_index.txt";
     private const string GoldMagicPath = "\\update10\\settings\\item\\004\\GoldMagic.txt";
@@ -232,7 +239,7 @@ public static class ItemDetailPopup
         AddHeader(item, itemData);
         string description = BuildDescriptionCached(item, itemData, itemDetail);
         AddScrollText(description);
-        AddButtons(item, itemData, cellIndex);
+        AddButtons(item, itemData, itemDetail, cellIndex);
 
         current.transform.SetAsLastSibling();
         Debug.Log("ItemDetailPopup open item id=" + item.GetDatabaseId() +
@@ -383,31 +390,388 @@ public static class ItemDetailPopup
         LayoutRebuilder.ForceRebuildLayoutImmediate(contentRect);
     }
 
-    private static void AddButtons(game.resource.settings.Item item, ItemData itemData, int cellIndex)
+    private static void AddButtons(game.resource.settings.Item item, ItemData itemData, ClassicItemSync itemDetail, int cellIndex)
     {
+        List<ItemDetailButton> buttons = BuildButtons(item, itemData, itemDetail, cellIndex);
+        buttons.Add(new ItemDetailButton("Đóng", Close));
+
         GameObject row = new GameObject("Buttons", typeof(RectTransform));
         row.transform.SetParent(current.transform, false);
 
-        HorizontalLayoutGroup layout = row.AddComponent<HorizontalLayoutGroup>();
-        layout.spacing = 8f;
-        layout.childControlWidth = true;
-        layout.childControlHeight = true;
-        layout.childForceExpandWidth = true;
-        layout.childForceExpandHeight = false;
+        GridLayoutGroup layout = row.AddComponent<GridLayoutGroup>();
+        layout.cellSize = new Vector2(ButtonWidth, ButtonHeight);
+        layout.spacing = new Vector2(ButtonSpacing, ButtonSpacing);
+        layout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+        layout.constraintCount = Mathf.Max(1, Mathf.Min(MaxButtonColumns, buttons.Count));
+        layout.childAlignment = TextAnchor.MiddleLeft;
 
         LayoutElement rowLayout = row.AddComponent<LayoutElement>();
-        rowLayout.preferredHeight = 44f;
+        int buttonRows = Mathf.CeilToInt(buttons.Count / (float)layout.constraintCount);
+        rowLayout.preferredHeight = (buttonRows * ButtonHeight) + (Mathf.Max(0, buttonRows - 1) * ButtonSpacing);
 
-        if (item.IsEquipment())
+        foreach (ItemDetailButton button in buttons)
         {
-            AddButton(row.transform, "Dung", () =>
-            {
-                PlayerMain.instance?.RequestEquipItemFromBag(item, itemData, cellIndex);
-                Close();
-            });
+            AddButton(row.transform, button.Title, button.Action, button.Interactable);
         }
 
-        AddButton(row.transform, "Dong", Close);
+        Debug.Log("ItemDetailPopup buttons item=" + (itemData != null ? itemData.id.ToString() : item.GetDatabaseId().ToString()) +
+                  " genre=" + item.GetGenre() +
+                  " detail=" + item.GetDetail() +
+                  " particular=" + item.GetParticular() +
+                  " local=" + (itemData != null ? itemData.Local.ToString() : "<null>") +
+                  " list=" + string.Join(",", buttons.ConvertAll(button => button.Title)));
+    }
+
+    private static List<ItemDetailButton> BuildButtons(
+        game.resource.settings.Item item,
+        ItemData itemData,
+        ClassicItemSync itemDetail,
+        int cellIndex)
+    {
+        List<ItemDetailButton> buttons = new List<ItemDetailButton>();
+        if (item == null || itemData == null || itemData.id == 0)
+        {
+            return buttons;
+        }
+
+        if (TryBuildActivePanelContextButtons(buttons, item, itemData, itemDetail))
+        {
+            return buttons;
+        }
+
+        if (IsEquippedItem(itemData))
+        {
+            if (ItemHasDurability(item, itemData, itemDetail))
+            {
+                AddUnsupportedButton(buttons, "Sửa", item, itemData);
+            }
+
+            AddUnsupportedButton(buttons, "Tháo", item, itemData);
+            AddUnsupportedButton(buttons, "Rao", item, itemData);
+            return buttons;
+        }
+
+        if (IsStorageItem(itemData))
+        {
+            AddUnsupportedButton(buttons, "Lấy", item, itemData);
+            return buttons;
+        }
+
+        if (ShouldShowUseButton(item, itemData, itemDetail))
+        {
+            AddUseButton(buttons, item, itemData, cellIndex);
+        }
+        AddUnsupportedButton(buttons, "Rao", item, itemData);
+
+        if (ItemHasDurability(item, itemData, itemDetail))
+        {
+            AddUnsupportedButton(buttons, "Sửa", item, itemData);
+        }
+
+        if (IsUnlocked(itemDetail))
+        {
+            AddUnsupportedButton(buttons, "Định Giá", item, itemData);
+        }
+
+        if (ShouldShowThrowButton(item, itemData, itemDetail))
+        {
+            AddUnsupportedButton(buttons, "Ném", item, itemData);
+        }
+
+        int genre = item.GetGenre();
+        if (genre == (int)Defination.Genre.item_equip)
+        {
+            int lockState = itemDetail != null ? itemDetail.LockState : 0;
+            if (lockState == -1)
+            {
+                AddUnsupportedButton(buttons, "Tháo đính", item, itemData);
+            }
+            else if (lockState == 0 || lockState == 1)
+            {
+                AddUnsupportedButton(buttons, "Đính", item, itemData);
+            }
+        }
+        else if (genre == (int)Defination.Genre.item_medicine || genre == (int)Defination.Genre.item_mine)
+        {
+            if (IsStackable(item, itemData))
+            {
+                AddUnsupportedButton(buttons, "Tách", item, itemData);
+                AddUnsupportedButton(buttons, "Gộp", item, itemData);
+            }
+
+            if (IsQuickSlotItem(item, itemData))
+            {
+                AddQuickSlotButtons(buttons, item, itemData);
+            }
+        }
+        else if (genre == (int)Defination.Genre.item_townportal)
+        {
+            AddQuickSlotButtons(buttons, item, itemData);
+        }
+        else if (IsStackable(item, itemData))
+        {
+            AddUnsupportedButton(buttons, "Gộp", item, itemData);
+            AddUnsupportedButton(buttons, "Tách", item, itemData);
+        }
+
+        if (ShouldShowExtraBagButton())
+        {
+            AddUnsupportedButton(buttons, "Hành trang", item, itemData);
+        }
+
+        return buttons;
+    }
+
+    private static bool TryBuildActivePanelContextButtons(
+        List<ItemDetailButton> buttons,
+        game.resource.settings.Item item,
+        ItemData itemData,
+        ClassicItemSync itemDetail)
+    {
+        if (IsPopupPanelActive("Trade"))
+        {
+            if (IsUnlocked(itemDetail) && (IsBagItem(itemData) || IsStorageItem(itemData)))
+            {
+                AddUnsupportedButton(buttons, "Thêm", item, itemData);
+            }
+
+            return true;
+        }
+
+        if (IsPopupPanelActive("Shop") && IsBagItem(itemData))
+        {
+            if (ItemHasDurability(item, itemData, itemDetail))
+            {
+                AddUnsupportedButton(buttons, "Sửa", item, itemData);
+            }
+
+            AddUnsupportedButton(buttons, "Bán", item, itemData);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static void AddUseButton(
+        List<ItemDetailButton> buttons,
+        game.resource.settings.Item item,
+        ItemData itemData,
+        int cellIndex)
+    {
+        buttons.Add(new ItemDetailButton("Dùng", () =>
+        {
+            if (item.IsEquipment())
+            {
+                PlayerMain.instance?.RequestEquipItemFromBag(item, itemData, cellIndex);
+            }
+            else
+            {
+                PlayerMain.instance?.RequestUseItemFromBag(item, itemData, cellIndex);
+            }
+
+            Close();
+        }));
+    }
+
+    private static bool ShouldShowUseButton(game.resource.settings.Item item, ItemData itemData, ClassicItemSync itemDetail)
+    {
+        if (item == null || itemData == null || itemData.id == 0)
+        {
+            return false;
+        }
+
+        int genre = item.GetGenre();
+        if (genre == (int)Defination.Genre.item_equip ||
+            genre == (int)Defination.Genre.item_medicine ||
+            genre == (int)Defination.Genre.item_task ||
+            genre == (int)Defination.Genre.item_mine ||
+            genre == (int)Defination.Genre.item_townportal)
+        {
+            return true;
+        }
+
+        if (itemDetail != null)
+        {
+            return itemDetail.IsCanUse || itemDetail.UseKind > 0;
+        }
+
+        SimpleItemBase simple = item.GetSimpleItemBase();
+        if (simple == null)
+        {
+            return false;
+        }
+
+        return simple.isUse > 0 || simple.useMap > 0 || simple.useKind > 0 || !string.IsNullOrEmpty(simple.script);
+    }
+
+    private static void AddQuickSlotButtons(List<ItemDetailButton> buttons, game.resource.settings.Item item, ItemData itemData)
+    {
+        AddUnsupportedButton(buttons, "F1", item, itemData);
+        AddUnsupportedButton(buttons, "F2", item, itemData);
+        AddUnsupportedButton(buttons, "F3", item, itemData);
+    }
+
+    private static void AddUnsupportedButton(List<ItemDetailButton> buttons, string title, game.resource.settings.Item item, ItemData itemData)
+    {
+        buttons.Add(new ItemDetailButton(title, () =>
+        {
+            Debug.LogWarning("ItemDetailPopup button not ported yet. button=" + title +
+                             " item=" + (itemData != null ? itemData.id.ToString() : item.GetDatabaseId().ToString()) +
+                             " genre=" + item.GetGenre() +
+                             " detail=" + item.GetDetail() +
+                             " particular=" + item.GetParticular());
+        }));
+    }
+
+    private static bool IsEquippedItem(ItemData itemData)
+    {
+        return itemData != null && itemData.Local == ItemPositionEquip;
+    }
+
+    private static bool IsBagItem(ItemData itemData)
+    {
+        return itemData != null && itemData.Local == ItemPositionBag;
+    }
+
+    private static bool IsStorageItem(ItemData itemData)
+    {
+        return itemData != null && itemData.Local == ItemPositionStorage;
+    }
+
+    private static bool ShouldShowExtraBagButton()
+    {
+        PhotonManager manager = PhotonManager.Instance;
+        return manager != null && manager.ClassicMainPlayerExItemId > 0;
+    }
+
+    private static bool IsPopupPanelActive(string panelName)
+    {
+        PopUpCanvas popup = PopUpCanvas.instance;
+        if (popup == null || string.IsNullOrEmpty(panelName))
+        {
+            return false;
+        }
+
+        Transform panel = popup.transform.Find(panelName);
+        return panel != null && panel.gameObject.activeInHierarchy;
+    }
+
+    private static bool IsUnlocked(ClassicItemSync itemDetail)
+    {
+        return itemDetail == null || itemDetail.LockState == 0;
+    }
+
+    private static bool IsStackable(game.resource.settings.Item item, ItemData itemData)
+    {
+        int currentStack = itemData != null && itemData.Stack > 0 ? itemData.Stack : item.GetStackCurrently();
+        return currentStack > 1 || item.GetStackMaximun() > 1;
+    }
+
+    private static bool IsQuickSlotItem(game.resource.settings.Item item, ItemData itemData)
+    {
+        if (itemData != null && itemData.IsKuaiJie > 0)
+        {
+            return true;
+        }
+
+        SimpleItemBase simple = item.GetSimpleItemBase();
+        return simple != null && simple.isKuaiJie > 0;
+    }
+
+    private static bool ItemHasDurability(game.resource.settings.Item item, ItemData itemData, ClassicItemSync itemDetail)
+    {
+        if (itemData != null && itemData.Durability > 0)
+        {
+            return true;
+        }
+
+        List<game.resource.settings.skill.SkillSettingData.KMagicAttrib> basics = item.GetBasicAttribs();
+        if (HasDurabilityMagic(basics))
+        {
+            return true;
+        }
+
+        return itemDetail != null && HasDurabilityMagic(itemDetail.MagicAttribs);
+    }
+
+    private static bool HasDurabilityMagic(List<game.resource.settings.skill.SkillSettingData.KMagicAttrib> magicList)
+    {
+        if (magicList == null)
+        {
+            return false;
+        }
+
+        foreach (game.resource.settings.skill.SkillSettingData.KMagicAttrib magic in magicList)
+        {
+            if (magic != null && magic.nAttribType == MagicDurability)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool HasDurabilityMagic(List<KMagicAttrib> magicList)
+    {
+        if (magicList == null)
+        {
+            return false;
+        }
+
+        foreach (KMagicAttrib magic in magicList)
+        {
+            if (magic.nAttribType == MagicDurability)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool ShouldShowThrowButton(game.resource.settings.Item item, ItemData itemData, ClassicItemSync itemDetail)
+    {
+        if (!IsUnlocked(itemDetail) || ResolveItemKind(item, itemData) == 1)
+        {
+            return false;
+        }
+
+        SimpleItemBase simple = item.GetSimpleItemBase();
+        return simple == null || simple.isDrop > 0;
+    }
+
+    private static int ResolveItemKind(game.resource.settings.Item item, ItemData itemData)
+    {
+        if (itemData != null)
+        {
+            if (itemData.IdGold > 0)
+            {
+                return 1;
+            }
+
+            if (itemData.Point == 7 || itemData.Point == 0)
+            {
+                return 2;
+            }
+
+            if (itemData.Point > 0 && itemData.Point <= 6)
+            {
+                return 3;
+            }
+        }
+
+        if (item.GetItemType() == Defination.Type.goldEquip)
+        {
+            return 1;
+        }
+
+        if (IsPurpleItem(item, itemData))
+        {
+            return 3;
+        }
+
+        return item.IsEquipment() ? 2 : 0;
     }
 
     private static string BuildDescription(game.resource.settings.Item item, ItemData itemData, ClassicItemSync itemDetail)
@@ -2042,18 +2406,22 @@ public static class ItemDetailPopup
         return runtimeFont;
     }
 
-    private static void AddButton(Transform parent, string title, System.Action action)
+    private static void AddButton(Transform parent, string title, System.Action action, bool interactable = true)
     {
         GameObject go = new GameObject(title, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
         go.transform.SetParent(parent, false);
-        go.GetComponent<Image>().color = new Color(0.23f, 0.18f, 0.12f, 1f);
+        Image image = go.GetComponent<Image>();
+        image.color = interactable
+            ? new Color(0.23f, 0.18f, 0.12f, 1f)
+            : new Color(0.12f, 0.11f, 0.1f, 1f);
 
         Button button = go.GetComponent<Button>();
+        button.interactable = interactable;
         button.onClick.AddListener(() => action?.Invoke());
 
         Text label = CreateText("Text", go.transform, 14, FontStyle.Bold, TextAnchor.MiddleCenter);
         label.text = title;
-        label.color = Color.white;
+        label.color = interactable ? Color.white : new Color(0.55f, 0.52f, 0.48f, 1f);
         RectTransform labelRect = label.GetComponent<RectTransform>();
         labelRect.anchorMin = Vector2.zero;
         labelRect.anchorMax = Vector2.one;
@@ -2069,5 +2437,19 @@ public static class ItemDetailPopup
         }
 
         return Color.white;
+    }
+
+    private sealed class ItemDetailButton
+    {
+        public readonly string Title;
+        public readonly System.Action Action;
+        public readonly bool Interactable;
+
+        public ItemDetailButton(string title, System.Action action, bool interactable = true)
+        {
+            Title = title;
+            Action = action;
+            Interactable = interactable;
+        }
     }
 }
