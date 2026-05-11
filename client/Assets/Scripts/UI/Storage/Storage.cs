@@ -26,38 +26,107 @@ public class Storage : MonoBehaviour
 
     private Dictionary<int, GameObject> ListBags = new();
     private Dictionary<int, GameObject> ListStorages = new();
+    private bool closeButtonBound;
+
+    private static readonly string[] LegacyBackgroundNames =
+    {
+        "BagBackground",
+        "ImgBgLeft",
+        "ImgBgRight",
+        "ImgLeft",
+        "ImgRight",
+        "PanelItems",
+        "PanelItemsStorage",
+        "PanelMenu"
+    };
+
+    private void Awake()
+    {
+        ResolveMissingReferences();
+        EnsureLegacyBackgroundVisible();
+    }
+
+    private void OnEnable()
+    {
+        ResolveMissingReferences();
+        EnsureLegacyBackgroundVisible();
+    }
 
     private void Start()
     {
-        CloseGameObject.GetComponent<Button>().onClick.AddListener(() =>
+        BindCloseButton();
+    }
+
+    private void BindCloseButton()
+    {
+        if (closeButtonBound)
+        {
+            return;
+        }
+
+        ResolveMissingReferences();
+        if (CloseGameObject == null)
+        {
+            Debug.LogWarning("Storage close button is missing.");
+            return;
+        }
+
+        CloseGameObject.onClick.AddListener(() =>
         {
             gameObject.SetActive(false);
         });
+        closeButtonBound = true;
     }
 
     public void InitStorage()
     {
+        ResolveMissingReferences();
+        EnsureLegacyBackgroundVisible();
+
         if (ListBags.Count > 0 || ListStorages.Count > 0)
         {
             return;
         }
 
+        if (ListStorage == null || ListBag == null || ItemEquip == null)
+        {
+            Debug.LogWarning("Storage references are missing. ListStorage=" + (ListStorage != null) +
+                             " ListBag=" + (ListBag != null) +
+                             " ItemEquip=" + (ItemEquip != null));
+            return;
+        }
+
+        GridLayoutGroup storageGrid = ListStorage.GetComponent<GridLayoutGroup>();
+        GridLayoutGroup bagGrid = ListBag.GetComponent<GridLayoutGroup>();
+        if (storageGrid == null || bagGrid == null)
+        {
+            Debug.LogWarning("Storage grid is missing. storageGrid=" + (storageGrid != null) +
+                             " bagGrid=" + (bagGrid != null));
+            return;
+        }
+
         for (int i = 0; i < 200; i++)
         {
-            GridLayoutGroup gridLayoutGroup = ListStorage.GetComponent<GridLayoutGroup>();
             GameObject StoragesChild = Instantiate(ItemEquip, Vector3.zero, Quaternion.identity);
-            StoragesChild.transform.SetParent(gridLayoutGroup.transform, false);
+            StoragesChild.transform.SetParent(storageGrid.transform, false);
             ListStorages.Add(i, StoragesChild);
 
-            GridLayoutGroup gridLayoutGroup2 = ListBag.GetComponent<GridLayoutGroup>();
             GameObject BagsChild = Instantiate(ItemEquip, Vector3.zero, Quaternion.identity);
-            BagsChild.transform.SetParent(gridLayoutGroup2.transform, false);
+            BagsChild.transform.SetParent(bagGrid.transform, false);
             ListBags.Add(i, BagsChild);
         }
     }
 
     public void SetUpPlayerItem()
     {
+        ResolveMissingReferences();
+        EnsureLegacyBackgroundVisible();
+
+        if (PhotonManager.Instance == null)
+        {
+            return;
+        }
+
         List<ItemData> itemDataBags = new();
         List<ItemData> itemDataStorages = new();
 
@@ -78,8 +147,15 @@ public class Storage : MonoBehaviour
         ClearCells(ListBags);
         ClearCells(ListStorages);
 
-        TextBags.text = itemDataBags.Count + "/" + ItemUiMapper.BagSlotCount;
-        TextStorages.text = itemDataStorages.Count + "/" + ListStorages.Count;
+        if (TextBags != null)
+        {
+            TextBags.text = itemDataBags.Count + "/" + ItemUiMapper.BagSlotCount;
+        }
+
+        if (TextStorages != null)
+        {
+            TextStorages.text = itemDataStorages.Count + "/" + ListStorages.Count;
+        }
 
         HashSet<int> usedBagSlots = new();
         for (int i = 0; i < itemDataBags.Count; i++)
@@ -126,7 +202,79 @@ public class Storage : MonoBehaviour
 
         usedSlots.Add(slot);
         Item item = RestoreItemFromDatabase(itemData);
-        itemBag.GetComponent<EquimentItem>().SetItemEquiment(item, slot, itemData);
+        itemBag.GetComponent<EquimentItem>()?.SetItemEquiment(item, slot, itemData);
+    }
+
+    private void ResolveMissingReferences()
+    {
+        if (CloseGameObject == null)
+        {
+            CloseGameObject = FindButtonByName("BtnClose") ?? FindButtonContaining("close");
+        }
+    }
+
+    private void EnsureLegacyBackgroundVisible()
+    {
+        foreach (Transform child in GetComponentsInChildren<Transform>(true))
+        {
+            if (!IsLegacyBackgroundName(child.name))
+            {
+                continue;
+            }
+
+            child.gameObject.SetActive(true);
+
+            Image image = child.GetComponent<Image>();
+            if (image != null)
+            {
+                image.enabled = true;
+                Color color = image.color;
+                if (color.a <= 0f)
+                {
+                    color.a = 1f;
+                    image.color = color;
+                }
+            }
+        }
+    }
+
+    private static bool IsLegacyBackgroundName(string name)
+    {
+        foreach (string legacyName in LegacyBackgroundNames)
+        {
+            if (string.Equals(name, legacyName, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private Button FindButtonByName(string buttonName)
+    {
+        foreach (Button button in GetComponentsInChildren<Button>(true))
+        {
+            if (string.Equals(button.name, buttonName, StringComparison.Ordinal))
+            {
+                return button;
+            }
+        }
+
+        return null;
+    }
+
+    private Button FindButtonContaining(string text)
+    {
+        foreach (Button button in GetComponentsInChildren<Button>(true))
+        {
+            if (button.name.IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return button;
+            }
+        }
+
+        return null;
     }
 
     private static int FindFreeSlot(Dictionary<int, GameObject> cells, HashSet<int> usedSlots, int preferredIndex)

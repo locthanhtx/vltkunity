@@ -236,8 +236,11 @@ public class PopUpCanvas : MonoBehaviour
         if (Storage != null)
         {
             Storage.SetActive(true);
-            Storage.GetComponent<Storage>().InitStorage();
-            Storage.GetComponent<Storage>().SetUpPlayerItem();
+            Storage.transform.SetAsLastSibling();
+
+            Storage storage = Storage.GetComponent<Storage>();
+            storage?.InitStorage();
+            storage?.SetUpPlayerItem();
         }
     }
 
@@ -245,7 +248,7 @@ public class PopUpCanvas : MonoBehaviour
     {
         if (Storage != null && Storage.activeInHierarchy)
         {
-            Storage.GetComponent<Storage>().SetUpPlayerItem();
+            Storage.GetComponent<Storage>()?.SetUpPlayerItem();
         }
     }
 
