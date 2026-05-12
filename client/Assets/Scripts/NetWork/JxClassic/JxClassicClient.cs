@@ -30,6 +30,7 @@ namespace game.network.jx
         private const byte C2SDialogNpc = 118;
         private const byte C2SPing = 122;
         private const byte C2SCpLock = 124;
+        private const byte C2SPlayerRevive = 133;
         private const byte C2SNpcRide = 140;
         private const byte C2SPlayerAutoEquip = 177;
         private const byte S2CNotifyPlayerLogin = 52;
@@ -488,6 +489,16 @@ namespace game.network.jx
             }
 
             await SendPacketAsync(BuildNpcRidePacket());
+        }
+
+        public async Task SendPlayerReviveAsync(int reviveType)
+        {
+            if (!IsConnected)
+            {
+                return;
+            }
+
+            await SendPacketAsync(BuildPlayerRevivePacket(reviveType));
         }
 
         public async Task SendAutoEquipAsync(uint itemId, int kind, int place, int x, int y)
@@ -1086,6 +1097,11 @@ namespace game.network.jx
         private static byte[] BuildNpcRidePacket()
         {
             return new[] { C2SNpcRide };
+        }
+
+        private static byte[] BuildPlayerRevivePacket(int reviveType)
+        {
+            return new[] { C2SPlayerRevive, ClampByte(reviveType) };
         }
 
         private static byte[] BuildSyncClientEndPacket(bool isLogin, uint clientKey)
@@ -2641,9 +2657,9 @@ namespace game.network.jx
                 return;
             }
 
-            characterData.CurLife = ReadPositiveInt32(packet, 1, characterData.CurLife);
-            characterData.CurStamina = ReadPositiveInt32(packet, 5, characterData.CurStamina);
-            characterData.CurInner = ReadPositiveInt32(packet, 9, characterData.CurInner);
+            characterData.CurLife = Math.Max(0, ReadInt32OrDefault(packet, 1, characterData.CurLife));
+            characterData.CurStamina = Math.Max(0, ReadInt32OrDefault(packet, 5, characterData.CurStamina));
+            characterData.CurInner = Math.Max(0, ReadInt32OrDefault(packet, 9, characterData.CurInner));
             characterData.MaxLife = ReadPositiveInt32(packet, 14, characterData.MaxLife);
             characterData.MaxStamina = ReadPositiveInt32(packet, 18, characterData.MaxStamina);
             characterData.MaxInner = ReadPositiveInt32(packet, 22, characterData.MaxInner);

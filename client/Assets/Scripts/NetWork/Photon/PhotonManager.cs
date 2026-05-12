@@ -49,6 +49,8 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
     private float nextClassicSkillSendTime;
     private PendingClassicSkillCast pendingClassicSkillCast;
     private readonly HashSet<string> classicSkillRenderWarnings = new();
+    private GameObject classicPlayerDie;
+    private bool classicMainPlayerDead;
 
     private sealed class PendingClassicSkillCast
     {
@@ -198,6 +200,8 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         }
 
         ClassicClient = classicClient;
+        classicMainPlayerDead = false;
+        ClearClassicPlayerDeathPopup();
     }
 
     public void SetClassicLocalMovementActive(bool active)
@@ -518,12 +522,22 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
             character = new CharacterData();
         }
 
-        character.CurLife = sync.CurLife > 0 ? sync.CurLife : character.CurLife;
-        character.CurStamina = sync.CurStamina > 0 ? sync.CurStamina : character.CurStamina;
-        character.CurInner = sync.CurInner > 0 ? sync.CurInner : character.CurInner;
+        int previousLife = character.CurLife;
+        character.CurLife = Math.Max(0, sync.CurLife);
+        character.CurStamina = Math.Max(0, sync.CurStamina);
+        character.CurInner = Math.Max(0, sync.CurInner);
         character.MaxLife = sync.MaxLife > 0 ? sync.MaxLife : character.MaxLife;
         character.MaxStamina = sync.MaxStamina > 0 ? sync.MaxStamina : character.MaxStamina;
         character.MaxInner = sync.MaxInner > 0 ? sync.MaxInner : character.MaxInner;
+
+        if (character.CurLife <= 0)
+        {
+            ApplyClassicMainPlayerDeath();
+        }
+        else if (classicMainPlayerDead || previousLife <= 0)
+        {
+            ApplyClassicMainPlayerRevive();
+        }
 
         if (!includeStaticData)
         {
@@ -1513,6 +1527,81 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         return Math.Max(1, hpMax);
     }
 
+    private void ApplyClassicMainPlayerDeath()
+    {
+        if (classicMainPlayerDead)
+        {
+            ShowClassicPlayerDeathPopup();
+            return;
+        }
+
+        classicMainPlayerDead = true;
+        CancelClassicAutoSkillCast();
+        NpcMgrs?.ClearTarget();
+
+        if (character != null)
+        {
+            character.CurLife = 0;
+        }
+
+        game.resource.settings.npcres.Controller mainPlayer = world != null ? world.GetMainPlayer() : null;
+        if (mainPlayer != null)
+        {
+            world.StopMainPlayerMove();
+            mainPlayer.data.m_CurrentLife = 0;
+            NpcAction.DoAction(mainPlayer, NPCCMD.do_death);
+        }
+
+        ShowClassicPlayerDeathPopup();
+    }
+
+    private void ApplyClassicMainPlayerRevive()
+    {
+        classicMainPlayerDead = false;
+        ClearClassicPlayerDeathPopup();
+
+        game.resource.settings.npcres.Controller mainPlayer = world != null ? world.GetMainPlayer() : null;
+        if (mainPlayer == null)
+        {
+            return;
+        }
+
+        if (mainPlayer.data.m_Doing == game.resource.settings.npcres.Datafield.NPCCMD.do_death ||
+            mainPlayer.data.m_Doing == game.resource.settings.npcres.Datafield.NPCCMD.do_revive)
+        {
+            NpcAction.DoAction(mainPlayer, NPCCMD.do_stand);
+        }
+    }
+
+    private void ShowClassicPlayerDeathPopup()
+    {
+        if (classicPlayerDie != null)
+        {
+            return;
+        }
+
+        classicPlayerDie = UIHelpers.BringPrefabToScene("PlayerDie");
+        PlayerDie playerDie = classicPlayerDie != null ? classicPlayerDie.GetComponent<PlayerDie>() : null;
+        if (playerDie != null)
+        {
+            playerDie.SetMessage("Bạn đã bị trọng thương!", OnClassicPlayerDeathPopupClosed);
+        }
+    }
+
+    private void ClearClassicPlayerDeathPopup()
+    {
+        if (classicPlayerDie != null)
+        {
+            Destroy(classicPlayerDie);
+            classicPlayerDie = null;
+        }
+    }
+
+    private void OnClassicPlayerDeathPopupClosed()
+    {
+        classicPlayerDie = null;
+    }
+
     private static void ApplyClassicPlayerVitals(CharacterClick player, ClassicNpcSync sync)
     {
         if (player == null || sync == null)
@@ -1651,19 +1740,27 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
 
         if (sync.Id == PlayerId)
         {
+            if (command == NPCCMD.do_death)
+            {
+                ApplyClassicMainPlayerDeath();
+                return;
+            }
+
+            if (command == NPCCMD.do_revive)
+            {
+                if (character != null && character.CurLife <= 0)
+                {
+                    character.CurLife = 1;
+                }
+
+                ApplyClassicMainPlayerRevive();
+                return;
+            }
+
             game.resource.settings.npcres.Controller mainPlayer = world.GetMainPlayer();
             if (mainPlayer != null)
             {
-                if (command == NPCCMD.do_death)
-                {
-                    world.StopMainPlayerMove();
-                }
                 NpcAction.DoAction(mainPlayer, command);
-            }
-
-            if (command == NPCCMD.do_death && character != null)
-            {
-                character.CurLife = 0;
             }
             return;
         }
@@ -2254,6 +2351,7 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
             Destroy(reConnect);
         }
 
+        ClearClassicPlayerDeathPopup();
     }
 
     /// <summary>
@@ -2314,6 +2412,10 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
 
         switch (operationCode)
         {
+            case OperationCode.DoDie:
+                RequestClassicRevive(0);
+                return true;
+
             case OperationCode.DoMove:
                 CancelClassicAutoSkillCast();
                 if (parameters == null ||
@@ -2491,6 +2593,18 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
 
         FireAndForgetClassicSend(ClassicClient.SendRideAsync());
         Debug.Log("JxClassicClient >> npc ride toggle");
+    }
+
+    public bool RequestClassicRevive(int reviveType)
+    {
+        if (ClassicClient == null || !ClassicClient.IsConnected)
+        {
+            return false;
+        }
+
+        FireAndForgetClassicSend(ClassicClient.SendPlayerReviveAsync(reviveType));
+        Debug.Log("JxClassicClient >> player revive type=" + reviveType);
+        return true;
     }
 
     public bool RequestClassicUseItem(uint itemId)
