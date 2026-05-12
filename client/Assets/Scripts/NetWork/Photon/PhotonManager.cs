@@ -31,7 +31,10 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
     private bool isDestroy = false;
     private readonly Dictionary<int, ClassicPlayerSync> pendingClassicPlayerSyncs = new();
     private const float ClassicNpcNormalSyncDuration = 0.22f;
-    private const float ClassicRunEchoIgnoreSeconds = 0.35f;
+    private const float ClassicRunEchoIgnoreSeconds = 0.9f;
+    private const float ClassicMainSmallCorrectionMps = 72f;
+    private const float ClassicStopEchoTinyCorrectionMps = 72f;
+    private const float ClassicStopEchoMaxBackwardMps = 512f;
     private const float ClassicSkillMinSendInterval = 0.16f;
     private const float ClassicSkillApproachResendInterval = 0.28f;
     private const float ClassicSkillApproachTimeout = 5f;
@@ -46,6 +49,12 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
     private const int ClassicMeleeWeaponHandParticular = 6;
     private bool classicLocalMovementActive;
     private float classicRunEchoIgnoreUntil;
+    private bool classicHasLocalMoveMps;
+    private bool classicHasLocalMoveDirection;
+    private bool classicHasLocalStopMps;
+    private Vector2 classicLastLocalMoveMps;
+    private Vector2 classicLastLocalMoveDirection;
+    private Vector2 classicLastLocalStopMps;
     private float nextClassicSkillSendTime;
     private PendingClassicSkillCast pendingClassicSkillCast;
     private readonly HashSet<string> classicSkillRenderWarnings = new();
@@ -206,16 +215,61 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
 
     public void SetClassicLocalMovementActive(bool active)
     {
+        bool wasActive = classicLocalMovementActive;
         classicLocalMovementActive = active;
         if (active)
         {
+            classicHasLocalStopMps = false;
+            TrackClassicLocalMovementSample();
             CancelClassicAutoSkillCast();
         }
 
         if (!active)
         {
-            classicRunEchoIgnoreUntil = Time.time + ClassicRunEchoIgnoreSeconds;
+            if (wasActive)
+            {
+                TrackClassicLocalStopSample();
+                classicRunEchoIgnoreUntil = Time.time + ClassicRunEchoIgnoreSeconds;
+            }
+            else if (Time.time >= classicRunEchoIgnoreUntil)
+            {
+                classicHasLocalStopMps = false;
+            }
         }
+    }
+
+    private void TrackClassicLocalMovementSample()
+    {
+        if (world == null || world.GetMainPlayer() == null)
+        {
+            return;
+        }
+
+        Vector2 currentMps = world.GetMainPlayerMpsPosition();
+        if (classicHasLocalMoveMps)
+        {
+            Vector2 delta = currentMps - classicLastLocalMoveMps;
+            if (delta.sqrMagnitude > 0.25f)
+            {
+                classicLastLocalMoveDirection = delta.normalized;
+                classicHasLocalMoveDirection = true;
+            }
+        }
+
+        classicLastLocalMoveMps = currentMps;
+        classicHasLocalMoveMps = true;
+    }
+
+    private void TrackClassicLocalStopSample()
+    {
+        if (world == null || world.GetMainPlayer() == null)
+        {
+            classicHasLocalStopMps = false;
+            return;
+        }
+
+        classicLastLocalStopMps = world.GetMainPlayerMpsPosition();
+        classicHasLocalStopMps = true;
     }
 
     public void ClearClassicCombatTarget(bool stopMainSkillAction)
@@ -2069,23 +2123,29 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
                 return;
             }
 
-            MapX = sync.MapX;
-            MapY = sync.MapY;
-
-            bool ignoreRunEcho = IsClassicMovingPositionSync(sync) &&
-                                 !classicLocalMovementActive &&
-                                 Time.time < classicRunEchoIgnoreUntil;
-
             if (classicLocalMovementActive)
             {
+                MapX = sync.MapX;
+                MapY = sync.MapY;
                 return;
             }
 
-            if (ignoreRunEcho)
+            if (ShouldIgnoreClassicMainPositionEcho(sync))
             {
                 NpcAction.DoAction(mainPlayer, NPCCMD.do_stand);
                 return;
             }
+
+            if (ShouldSkipClassicMainSmallCorrection(sync))
+            {
+                MapX = sync.MapX;
+                MapY = sync.MapY;
+                NpcAction.DoAction(mainPlayer, NPCCMD.do_stand);
+                return;
+            }
+
+            MapX = sync.MapX;
+            MapY = sync.MapY;
 
             JxClassicMovement.EnsureBaseSpeed(mainPlayer);
             ApplyClassicMoveState(mainPlayer, top, left, sync);
@@ -2246,6 +2306,58 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
                (sync.HasMoveAction ||
                 sync.Command == (byte)NPCCMD.do_run ||
                 sync.Command == (byte)NPCCMD.do_walk);
+    }
+
+    private bool ShouldIgnoreClassicMainPositionEcho(ClassicNpcPositionSync sync)
+    {
+        if (sync == null ||
+            classicLocalMovementActive ||
+            !classicHasLocalStopMps ||
+            Time.time >= classicRunEchoIgnoreUntil)
+        {
+            return false;
+        }
+
+        if (IsClassicMovingPositionSync(sync))
+        {
+            return true;
+        }
+
+        Vector2 syncMps = new(sync.MapX, sync.MapY);
+        Vector2 stopToSync = syncMps - classicLastLocalStopMps;
+        float correctionDistance = stopToSync.magnitude;
+        if (correctionDistance <= ClassicStopEchoTinyCorrectionMps)
+        {
+            return true;
+        }
+
+        if (correctionDistance > ClassicStopEchoMaxBackwardMps)
+        {
+            return false;
+        }
+
+        if (!classicHasLocalMoveDirection)
+        {
+            return true;
+        }
+
+        // After releasing the joystick, the server may still echo older stop/stand positions.
+        // Ignore small corrections that point behind the last local movement vector.
+        return Vector2.Dot(stopToSync, classicLastLocalMoveDirection) <= 0f;
+    }
+
+    private bool ShouldSkipClassicMainSmallCorrection(ClassicNpcPositionSync sync)
+    {
+        if (sync == null ||
+            world == null ||
+            IsClassicMovingPositionSync(sync))
+        {
+            return false;
+        }
+
+        Vector2 currentMps = world.GetMainPlayerMpsPosition();
+        Vector2 syncMps = new(sync.MapX, sync.MapY);
+        return Vector2.Distance(currentMps, syncMps) <= ClassicMainSmallCorrectionMps;
     }
 
     private void ApplyClassicRemotePlayerStandCorrection(
@@ -3118,6 +3230,14 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
 
     private Vector2 GetClassicMainPlayerServerMpsPosition()
     {
+        if (!classicLocalMovementActive &&
+            classicHasLocalStopMps &&
+            Time.time < classicRunEchoIgnoreUntil &&
+            world != null)
+        {
+            return world.GetMainPlayerMpsPosition();
+        }
+
         if (MapX > 0 && MapY > 0)
         {
             return new Vector2(MapX, MapY);
