@@ -77,7 +77,12 @@ namespace game.resource.map
 
         public void Load(settings.MapList.MapInfo mapInfo)
         {
-            UnityEngine.Sprite sprite = Game.Resource(mapInfo.filePath.miniMapImage).Get<UnityEngine.Sprite>();
+            UnityEngine.Sprite sprite;
+            bool usingConvertedMiniMap = map.ConvertedAssetMap.TryGetMiniMapSprite(mapInfo.id, out sprite);
+            if (usingConvertedMiniMap == false)
+            {
+                sprite = Game.Resource(mapInfo.filePath.miniMapImage).Get<UnityEngine.Sprite>();
+            }
 
             if (sprite == null)
             {
@@ -88,6 +93,15 @@ namespace game.resource.map
                 UnityEngine.Debug.LogWarning("game.resource.map.MiniMap missing image: " + mapInfo.filePath.miniMapImage);
                 return;
             }
+
+            string sourcePath = usingConvertedMiniMap
+                ? System.IO.Path.Combine(map.ConvertedAssetMap.GetMapFolderPath(mapInfo.id), "minimap_map_" + mapInfo.id)
+                : mapInfo.filePath.miniMapImage;
+            UnityEngine.Debug.Log("game.resource.map.MiniMap source=" + (usingConvertedMiniMap ? "PREFAB" : "SPR") +
+                                  " mapId=" + mapInfo.id +
+                                  " path=" + sourcePath +
+                                  " sprite=" + sprite.name +
+                                  " size=" + sprite.texture.width + "x" + sprite.texture.height);
 
             this.compRect.sizeDelta = new UnityEngine.Vector2(sprite.texture.width, sprite.texture.height);
             this.compImage.sprite = sprite;

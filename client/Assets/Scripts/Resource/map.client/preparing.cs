@@ -530,6 +530,12 @@ namespace game.resource.map
             map.Position centralOrigin = _command.originPosition;
             map.Position.Grid centralGrid = centralOrigin.GetGrid();
 
+            if (ConvertedAssetMap.IsEnabled(this.mapInfo))
+            {
+                this.MainThread_CentralConverted(centralOrigin, centralGrid);
+                return;
+            }
+
             if (this.textureConfig.drawFullMap == 1)
             {
                 this.MainThread_CentralFullMap(centralOrigin, centralGrid);
@@ -849,6 +855,95 @@ namespace game.resource.map
             }
         }
 
+        private void MainThread_CentralConverted(map.Position centralOrigin, map.Position.Grid centralGrid)
+        {
+            if (this.textureConfig.drawFullMap == 1)
+            {
+                this.MainThread_CentralFullMapConverted(centralOrigin, centralGrid);
+                return;
+            }
+
+            if (this.currentGridPosition.gridTop == centralGrid.gridTop
+                && this.currentGridPosition.gridLeft == centralGrid.gridLeft)
+            {
+                return;
+            }
+
+            map.Surface.NodeGridChanged nodeGridSurfaceChanged = map.Surface.Update(this.currentOriginPosition, centralOrigin, this.textureConfig.radiusHorizontalVisibility, this.textureConfig.radiusVerticalVisibility, this.textureConfig.nodePrefetchRadius);
+            this.currentGridPosition = centralGrid;
+            this.currentOriginPosition = centralOrigin;
+
+            List<map.Textures.Command.Element> commands = new List<Textures.Command.Element>();
+
+            foreach (KeyValuePair<int, Dictionary<int, map.Position.Node>> nodeTop in nodeGridSurfaceChanged.node.newNodePositions)
+            {
+                foreach (KeyValuePair<int, map.Position.Node> nodeLeft in nodeTop.Value)
+                {
+                    commands.Add(new Textures.Command.AddConvertedRegion(this.mapInfo.id, nodeLeft.Value.ToSequential()));
+                }
+            }
+
+            foreach (KeyValuePair<int, Dictionary<int, map.Position.Grid>> gridTopIndex in nodeGridSurfaceChanged.grid.newGridPositions)
+            {
+                foreach (KeyValuePair<int, map.Position.Grid> gridLeftIndex in gridTopIndex.Value)
+                {
+                    map.Position.Grid gridPosition = gridLeftIndex.Value;
+                    if (this.cacheStaticNpc.ContainsKey(gridPosition.gridTop) == false
+                        || this.cacheStaticNpc[gridPosition.gridTop].ContainsKey(gridPosition.gridLeft) == false)
+                    {
+                        continue;
+                    }
+
+                    foreach (Preparing.Command.AddNpc staticNpcIndex in this.cacheStaticNpc[gridPosition.gridTop][gridPosition.gridLeft])
+                    {
+                        if (staticNpcIndex.special != null)
+                        {
+                            commands.Add(new Textures.Command.AddSpecialNpc(staticNpcIndex.special));
+                        }
+                        else if (staticNpcIndex.normal != null)
+                        {
+                            commands.Add(new Textures.Command.AddNormalNpc(staticNpcIndex.normal));
+                        }
+                    }
+                }
+            }
+
+            foreach (KeyValuePair<int, Dictionary<int, map.Position.Grid>> gridTopIndex in nodeGridSurfaceChanged.grid.removeGridPositions)
+            {
+                foreach (KeyValuePair<int, map.Position.Grid> gridLeftIndex in gridTopIndex.Value)
+                {
+                    map.Position.Grid gridPosition = gridLeftIndex.Value;
+                    if (this.cacheStaticNpc.ContainsKey(gridPosition.gridTop) == false
+                        || this.cacheStaticNpc[gridPosition.gridTop].ContainsKey(gridPosition.gridLeft) == false)
+                    {
+                        continue;
+                    }
+
+                    foreach (Preparing.Command.AddNpc staticNpcIndex in this.cacheStaticNpc[gridPosition.gridTop][gridPosition.gridLeft])
+                    {
+                        if (staticNpcIndex.special != null)
+                        {
+                            commands.Add(new Textures.Command.HideSpecialNpc(staticNpcIndex.special));
+                        }
+                        else if (staticNpcIndex.normal != null)
+                        {
+                            commands.Add(new Textures.Command.HideNormalNpc(staticNpcIndex.normal));
+                        }
+                    }
+                }
+            }
+
+            foreach (KeyValuePair<int, Dictionary<int, map.Position.Node>> nodeTop in nodeGridSurfaceChanged.node.removeNodePositions)
+            {
+                foreach (KeyValuePair<int, map.Position.Node> nodeLeft in nodeTop.Value)
+                {
+                    commands.Add(new Textures.Command.RemoveConvertedRegion(nodeLeft.Value.ToSequential()));
+                }
+            }
+
+            this.textureThread.PushVector(commands);
+        }
+
         private void MainThread_CentralFullMap(map.Position centralOrigin, map.Position.Grid centralGrid)
         {
             if (this.fullMapLoaded)
@@ -897,6 +992,32 @@ namespace game.resource.map
             {
                 this.AddParsedObstacleData(nodeElementsParsed);
             }
+        }
+
+        private void MainThread_CentralFullMapConverted(map.Position centralOrigin, map.Position.Grid centralGrid)
+        {
+            if (this.fullMapLoaded)
+            {
+                return;
+            }
+
+            List<map.Position.Sequential.Node> nodeList = this.BuildFullMapNodeList();
+            if (nodeList.Count <= 0)
+            {
+                return;
+            }
+
+            this.currentGridPosition = centralGrid;
+            this.currentOriginPosition = centralOrigin;
+            this.fullMapLoaded = true;
+
+            List<map.Textures.Command.Element> commands = new List<Textures.Command.Element>();
+            foreach (map.Position.Sequential.Node node in nodeList)
+            {
+                commands.Add(new Textures.Command.AddConvertedRegion(this.mapInfo.id, node));
+            }
+
+            this.textureThread.PushVector(commands);
         }
 
         private List<map.Position.Sequential.Node> BuildFullMapNodeList()
@@ -1069,6 +1190,14 @@ namespace game.resource.map
 
             this.cacheGridTextures.Clear();
             this.cacheStaticNpc.Clear();
+
+            if (ConvertedAssetMap.IsEnabled(this.mapInfo))
+            {
+                this.textureThread.PushCommand(new Textures.Command.LoadConvertedObstacle(
+                    this.mapInfo.id,
+                    this.obstacleBarrier,
+                    this.textureConfig.drawObstacleGrid == 1));
+            }
         }
 
         private static string DecodeTexturePath(byte[] texturePathBuffer)

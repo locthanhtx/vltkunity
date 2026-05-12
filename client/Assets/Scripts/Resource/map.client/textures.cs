@@ -33,6 +33,9 @@ namespace game.resource.map
                 addObstacleGrid,
                 addTrapGrid,
                 removeNode,
+                addConvertedRegion,
+                removeConvertedRegion,
+                loadConvertedObstacle,
                 identification,
                 castSkill,
             }
@@ -236,6 +239,42 @@ namespace game.resource.map
                 }
             }
 
+            public class AddConvertedRegion : Command.Element
+            {
+                public int mapId;
+                public map.Position.Sequential.Node nodePosition;
+
+                public AddConvertedRegion(int mapId, map.Position.Sequential.Node nodePosition) : base(Command.ID.addConvertedRegion)
+                {
+                    this.mapId = mapId;
+                    this.nodePosition = nodePosition;
+                }
+            }
+
+            public class RemoveConvertedRegion : Command.Element
+            {
+                public map.Position.Sequential.Node nodePosition;
+
+                public RemoveConvertedRegion(map.Position.Sequential.Node nodePosition) : base(Command.ID.removeConvertedRegion)
+                {
+                    this.nodePosition = nodePosition;
+                }
+            }
+
+            public class LoadConvertedObstacle : Command.Element
+            {
+                public int mapId;
+                public map.Obstacle.Barrier obstacleBarrier;
+                public bool drawObstacleGrid;
+
+                public LoadConvertedObstacle(int mapId, map.Obstacle.Barrier obstacleBarrier, bool drawObstacleGrid) : base(Command.ID.loadConvertedObstacle)
+                {
+                    this.mapId = mapId;
+                    this.obstacleBarrier = obstacleBarrier;
+                    this.drawObstacleGrid = drawObstacleGrid;
+                }
+            }
+
             public class Identification : Command.Element
             {
                 public map.Config.Identification identification;
@@ -334,6 +373,7 @@ namespace game.resource.map
         private readonly Dictionary<int, Dictionary<int, List<UnityEngine.GameObject>>> ownedByGrid;
         private readonly Dictionary<int, Dictionary<int, UnityEngine.GameObject>> ownedByNode;
         private readonly Dictionary<int, Dictionary<int, UnityEngine.GameObject>> ownedTrapByNode;
+        private readonly Dictionary<int, Dictionary<int, List<UnityEngine.GameObject>>> ownedConvertedRegions;
         private readonly Dictionary<settings.npcres.Controller, bool> specialNpcs;
         private readonly Dictionary<settings.npcres.Controller, bool> normalNpcs;
         private readonly Dictionary<settings.skill.Missile, bool> missiles;
@@ -356,6 +396,7 @@ namespace game.resource.map
             this.ownedByGrid = new Dictionary<int, Dictionary<int, List<UnityEngine.GameObject>>>();
             this.ownedByNode = new Dictionary<int, Dictionary<int, UnityEngine.GameObject>>();
             this.ownedTrapByNode = new Dictionary<int, Dictionary<int, UnityEngine.GameObject>>();
+            this.ownedConvertedRegions = new Dictionary<int, Dictionary<int, List<UnityEngine.GameObject>>>();
             this.specialNpcs = new Dictionary<settings.npcres.Controller, bool>();
             this.normalNpcs = new Dictionary<settings.npcres.Controller, bool>();
             this.missiles = new Dictionary<settings.skill.Missile, bool>();
@@ -666,6 +707,18 @@ namespace game.resource.map
 
                     case Textures.Command.ID.removeNode:
                         this.Command_RemoveNode((Textures.Command.RemoveNode)command);
+                        break;
+
+                    case Textures.Command.ID.addConvertedRegion:
+                        this.Command_AddConvertedRegion((Textures.Command.AddConvertedRegion)command);
+                        break;
+
+                    case Textures.Command.ID.removeConvertedRegion:
+                        this.Command_RemoveConvertedRegion((Textures.Command.RemoveConvertedRegion)command);
+                        break;
+
+                    case Textures.Command.ID.loadConvertedObstacle:
+                        this.Command_LoadConvertedObstacle((Textures.Command.LoadConvertedObstacle)command);
                         break;
 
                     case Textures.Command.ID.identification:
@@ -1251,6 +1304,17 @@ namespace game.resource.map
 
                 this.ownedTrapByNode.Clear();
 
+                foreach (KeyValuePair<int, Dictionary<int, List<UnityEngine.GameObject>>> nodeTopIndex in this.ownedConvertedRegions)
+                {
+                    foreach (KeyValuePair<int, List<UnityEngine.GameObject>> nodeLeftIndex in nodeTopIndex.Value)
+                    {
+                        this.Command_RemoveGridDestroyGameObjects(nodeLeftIndex.Value);
+                    }
+                }
+
+                this.ownedConvertedRegions.Clear();
+                ConvertedAssetMap.UnloadAllBundles();
+
                 this.Command_Reset_DestroyCacheStorage(this.spriteStorageCache.groundNodeStorage);
                 this.spriteStorageCache.groundNodeStorage.Clear();
                 this.Command_Reset_DestroyCacheStorage(this.spriteStorageCache.groundObjectStorage);
@@ -1537,6 +1601,89 @@ namespace game.resource.map
                 {
                     this.ownedTrapByNode.Remove(_command.nodePosition.nodeTop);
                 }
+            }
+        }
+
+        private void Command_AddConvertedRegion(Textures.Command.AddConvertedRegion _command)
+        {
+            int nodeTop = _command.nodePosition.nodeTop;
+            int nodeLeft = _command.nodePosition.nodeLeft;
+
+            if (this.ownedConvertedRegions.ContainsKey(nodeTop)
+                && this.ownedConvertedRegions[nodeTop].ContainsKey(nodeLeft))
+            {
+                return;
+            }
+
+            if (ConvertedAssetMap.TryInstantiateRegion(_command.mapId, _command.nodePosition, this.layers, out List<UnityEngine.GameObject> ownedObjects) == false
+                || ownedObjects == null
+                || ownedObjects.Count <= 0)
+            {
+                return;
+            }
+
+            if (this.ownedConvertedRegions.ContainsKey(nodeTop) == false)
+            {
+                this.ownedConvertedRegions[nodeTop] = new Dictionary<int, List<UnityEngine.GameObject>>();
+            }
+
+            this.ownedConvertedRegions[nodeTop][nodeLeft] = ownedObjects;
+        }
+
+        private void Command_RemoveConvertedRegion(Textures.Command.RemoveConvertedRegion _command)
+        {
+            int nodeTop = _command.nodePosition.nodeTop;
+            int nodeLeft = _command.nodePosition.nodeLeft;
+
+            if (this.ownedConvertedRegions.ContainsKey(nodeTop) == false
+                || this.ownedConvertedRegions[nodeTop].ContainsKey(nodeLeft) == false)
+            {
+                return;
+            }
+
+            this.Command_RemoveGridDestroyGameObjects(this.ownedConvertedRegions[nodeTop][nodeLeft]);
+            this.ownedConvertedRegions[nodeTop].Remove(nodeLeft);
+            if (this.ownedConvertedRegions[nodeTop].Count <= 0)
+            {
+                this.ownedConvertedRegions.Remove(nodeTop);
+            }
+        }
+
+        private void Command_LoadConvertedObstacle(Textures.Command.LoadConvertedObstacle _command)
+        {
+            if (_command.obstacleBarrier == null)
+            {
+                return;
+            }
+
+            List<map.Obstacle.Data> obstacleDataVector = ConvertedAssetMap.LoadObstacleData(_command.mapId);
+            if (obstacleDataVector.Count <= 0)
+            {
+                return;
+            }
+
+            _command.obstacleBarrier.AddDataVector(obstacleDataVector);
+            if (_command.drawObstacleGrid == false)
+            {
+                return;
+            }
+
+            foreach (map.Obstacle.Data obstacleData in obstacleDataVector)
+            {
+                map.Obstacle.Grid obstacleGrid = new map.Obstacle.Grid(obstacleData);
+                map.Position.Sequential.Node nodeAssetPosition = obstacleGrid.GetNodePosition();
+                UnityEngine.Vector2 scenePosition = new UnityEngine.Vector3(
+                    (((float)map.Static.nodeMapDimension / 2) + nodeAssetPosition.nodeLeft) / 100,
+                    (((float)map.Static.nodeMapDimension / 2) + nodeAssetPosition.nodeTop) / -100
+                );
+
+                obstacleGrid.Initialize();
+                obstacleGrid.DrawGrid();
+
+                this.Command_AddObstacleGrid(new Textures.Command.AddObstacleGrid(
+                    obstacleGrid: obstacleGrid,
+                    scenePosition: scenePosition
+                ));
             }
         }
 

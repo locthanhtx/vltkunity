@@ -95,7 +95,13 @@ namespace game.resource
             this.miniMap.Reset(this.info);
             this.npcList.Reset(this.info);
 
-            this.appearance.name = typeof(game.resource.Map).FullName + " - " + _mapId + " - " + this.info.name;
+            bool usingConvertedPrefabMap = map.ConvertedAssetMap.IsEnabled(this.info);
+            this.appearance.name = typeof(game.resource.Map).FullName + " - " + _mapId + " - " + this.info.name + (usingConvertedPrefabMap ? " [PREFAB]" : " [SPR]");
+            if (usingConvertedPrefabMap)
+            {
+                UnityEngine.Debug.Log("game.resource.Map source=PREFAB mapId=" + _mapId +
+                                      " status=" + map.ConvertedAssetMap.GetAvailabilityStatus(_mapId));
+            }
 
             return true;
         }
@@ -113,7 +119,11 @@ namespace game.resource
         {
             this.ClearPreviewBackground();
 
-            UnityEngine.Sprite sprite = Game.Resource(this.info.filePath.miniMapImage).Get<UnityEngine.Sprite>();
+            UnityEngine.Sprite sprite;
+            if (map.ConvertedAssetMap.TryGetMiniMapSprite(this.info.id, out sprite) == false)
+            {
+                sprite = Game.Resource(this.info.filePath.miniMapImage).Get<UnityEngine.Sprite>();
+            }
             bool hasMiniMapImage = sprite != null;
             if (sprite == null)
             {
