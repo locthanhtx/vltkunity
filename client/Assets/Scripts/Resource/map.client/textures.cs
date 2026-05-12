@@ -9,6 +9,9 @@ namespace game.resource.map
     {
         private static readonly bool EnableLocalSkillSpriteRendering = true;
         private static int MaxMapSpritesCreatedPerFrame = 6;
+        private const int PixelsPerUnit = 100;
+        private const int AxmolRefSpotFallbackCenterX = 160;
+        private const int AxmolRefSpotFallbackCenterY = 192;
 
         public class Command
         {
@@ -305,6 +308,11 @@ namespace game.resource.map
             public UnityEngine.SpriteRenderer spriteRenderer;
             public string texturePath;
             public map.Position.Sequential.Origin originPosition;
+            public resource.SPR.Info sprInfo;
+            public resource.SPR.FrameInfo initialFrameInfo;
+            public bool useRefSpotPosition;
+            public int refTop;
+            public int refLeft;
             public ushort currentFrame;
             public ushort frameCount;
             public int intervalMilliseconds;
@@ -477,7 +485,7 @@ namespace game.resource.map
                 }
 
                 animation.spriteRenderer.sprite = spriteFrame.frameSprite;
-                this.SetMapTexturePosition(animation.gameObject.transform, spriteFrame.frameInfo, animation.originPosition);
+                this.SetMapTextureAnimationPosition(animation.gameObject.transform, spriteFrame.frameInfo, animation);
             }
         }
         private void Update_Objs()
@@ -935,9 +943,73 @@ namespace game.resource.map
 
         private void SetMapTexturePosition(UnityEngine.Transform transform, resource.SPR.FrameInfo frameInfo, map.Position.Sequential.Origin originPosition)
         {
-            transform.position = new UnityEngine.Vector3(
-                (((float)frameInfo.width / 2) + originPosition.left) / 100,
-                (((float)frameInfo.height / 2) + originPosition.top) / -100
+            transform.position = GetMapTexturePosition(frameInfo, originPosition);
+        }
+
+        private static UnityEngine.Vector3 GetMapTexturePosition(resource.SPR.FrameInfo frameInfo, map.Position.Sequential.Origin originPosition)
+        {
+            if (frameInfo == null)
+            {
+                return UnityEngine.Vector3.zero;
+            }
+
+            return new UnityEngine.Vector3(
+                (((float)frameInfo.width / 2) + originPosition.left) / PixelsPerUnit,
+                -(((float)frameInfo.height / 2) + originPosition.top) / PixelsPerUnit
+            );
+        }
+
+        private void SetMapTextureAnimationPosition(UnityEngine.Transform transform, resource.SPR.FrameInfo frameInfo, MapTextureAnimation animation)
+        {
+            transform.position = animation.useRefSpotPosition
+                ? GetRefSpotTexturePosition(
+                    frameInfo,
+                    animation.refTop,
+                    animation.refLeft,
+                    animation.sprInfo?.centerX ?? 0,
+                    animation.sprInfo?.centerY ?? 0,
+                    animation.sprInfo?.width ?? 0)
+                : GetOffsetStableTexturePosition(frameInfo, animation.originPosition, animation.initialFrameInfo);
+        }
+
+        private static UnityEngine.Vector3 GetOffsetStableTexturePosition(resource.SPR.FrameInfo frameInfo, map.Position.Sequential.Origin originPosition, resource.SPR.FrameInfo initialFrameInfo)
+        {
+            if (frameInfo == null)
+            {
+                return UnityEngine.Vector3.zero;
+            }
+
+            if (initialFrameInfo == null)
+            {
+                return GetMapTexturePosition(frameInfo, originPosition);
+            }
+
+            float topLeft = originPosition.left - initialFrameInfo.offsetX + frameInfo.offsetX;
+            float top = originPosition.top - initialFrameInfo.offsetY + frameInfo.offsetY;
+            return new UnityEngine.Vector3(
+                (topLeft + ((float)frameInfo.width / 2)) / PixelsPerUnit,
+                -((top + ((float)frameInfo.height / 2)) / PixelsPerUnit)
+            );
+        }
+
+        private static UnityEngine.Vector3 GetRefSpotTexturePosition(resource.SPR.FrameInfo frameInfo, int refTop, int refLeft, int centerX, int centerY, int headerWidth)
+        {
+            if (frameInfo == null)
+            {
+                return UnityEngine.Vector3.zero;
+            }
+
+            if (centerX == 0 && centerY == 0 && headerWidth > AxmolRefSpotFallbackCenterX)
+            {
+                centerX = AxmolRefSpotFallbackCenterX;
+                centerY = AxmolRefSpotFallbackCenterY;
+            }
+
+            float topLeft = refLeft - centerX + frameInfo.offsetX;
+            float top = refTop - centerY + frameInfo.offsetY;
+            return new UnityEngine.Vector3(
+                (topLeft + ((float)frameInfo.width / 2)) / PixelsPerUnit,
+                -((top + ((float)frameInfo.height / 2)) / PixelsPerUnit)
             );
         }
 
@@ -995,27 +1067,42 @@ namespace game.resource.map
 
             this.ownedByGrid[gridPosition.gridTop][gridPosition.gridLeft].Add(newGameObject);
 
-            this.Command_AddNewTexture_Animation(_newTexture, newGameObject, newSpriteRenderer);
+            this.Command_AddNewTexture_Animation(_newTexture, newGameObject, newSpriteRenderer, spriteFrame);
             return true;
         }
 
-        private void Command_AddNewTexture_Animation(Textures.Command.AddNewTexture _newTexture, UnityEngine.GameObject gameObject, UnityEngine.SpriteRenderer spriteRenderer)
+        private void Command_AddNewTexture_Animation(Textures.Command.AddNewTexture _newTexture, UnityEngine.GameObject gameObject, UnityEngine.SpriteRenderer spriteRenderer, Textures.SpriteFrameCache initialSpriteFrame)
         {
             if (_newTexture.animated == false)
             {
                 return;
             }
 
+            BuildinAnimation.AnimationObjectInfo buildinInfo = default;
+            bool matchedRegionAnimation = false;
             try
             {
-                if (BuildinAnimation.TryGet(_newTexture.mapRootPath, _newTexture.originPosition, _newTexture.gridAssetPosition, _newTexture.elementType, _newTexture.texturePath, _newTexture.textureFrame) == false)
+                if (BuildinAnimation.IsCandidate(_newTexture.elementType))
                 {
-                    return;
+                    matchedRegionAnimation = BuildinAnimation.TryGetInfo(
+                        _newTexture.mapRootPath,
+                        _newTexture.originPosition,
+                        _newTexture.gridAssetPosition,
+                        _newTexture.elementType,
+                        _newTexture.texturePath,
+                        _newTexture.textureFrame,
+                        out buildinInfo);
                 }
             }
             catch (Exception exception)
             {
                 UnityEngine.Debug.LogWarning("Map texture animation metadata failed: " + _newTexture.texturePath + " error=" + exception.Message);
+                return;
+            }
+
+            bool matchedMapAnimationPath = BuildinAnimation.IsMapAnimationTexturePath(_newTexture.texturePath);
+            if (matchedRegionAnimation == false && matchedMapAnimationPath == false)
+            {
                 return;
             }
 
@@ -1030,34 +1117,66 @@ namespace game.resource.map
                 return;
             }
 
-            if (sprInfo == null || sprInfo.frameCount <= 1)
+            int frameCount = matchedRegionAnimation && buildinInfo.FileFrameCount > 1
+                ? buildinInfo.FileFrameCount
+                : sprInfo?.frameCount ?? 0;
+
+            if (sprInfo == null || frameCount <= 1)
             {
                 return;
             }
 
-            int intervalMilliseconds = sprInfo.interval;
-            if (intervalMilliseconds < 20)
+            int intervalMilliseconds = matchedRegionAnimation && buildinInfo.AnimationSpeed > 1
+                ? buildinInfo.AnimationSpeed
+                : sprInfo.interval;
+            if (matchedRegionAnimation && buildinInfo.AnimationSpeed == 1 && intervalMilliseconds < 20)
             {
                 intervalMilliseconds = 20;
             }
+            else if (intervalMilliseconds < 20)
+            {
+                intervalMilliseconds = 1000 / resource.SPR.FPS;
+            }
 
             ushort initialFrame = _newTexture.textureFrame;
-            if (initialFrame >= sprInfo.frameCount)
+            if (initialFrame >= frameCount)
             {
                 initialFrame = 0;
             }
 
-            this.mapTextureAnimations.Add(new MapTextureAnimation
+            resource.SPR.FrameInfo initialFrameInfo = initialSpriteFrame?.frameInfo;
+            Textures.SpriteFrameCache activeInitialSpriteFrame = initialSpriteFrame;
+            if (initialFrame != _newTexture.textureFrame)
+            {
+                activeInitialSpriteFrame = this.GetAnimationSpriteFrame(_newTexture.texturePath, initialFrame);
+                initialFrameInfo = activeInitialSpriteFrame?.frameInfo;
+                if (activeInitialSpriteFrame == null || initialFrameInfo == null || activeInitialSpriteFrame.frameSprite == null)
+                {
+                    return;
+                }
+
+                spriteRenderer.sprite = activeInitialSpriteFrame.frameSprite;
+            }
+
+            MapTextureAnimation animation = new MapTextureAnimation
             {
                 gameObject = gameObject,
                 spriteRenderer = spriteRenderer,
                 texturePath = _newTexture.texturePath,
                 originPosition = _newTexture.originPosition,
+                sprInfo = sprInfo,
+                initialFrameInfo = initialFrameInfo,
+                useRefSpotPosition = matchedRegionAnimation,
+                refTop = buildinInfo.RefTop,
+                refLeft = buildinInfo.RefLeft,
                 currentFrame = initialFrame,
-                frameCount = sprInfo.frameCount,
+                frameCount = (ushort)Math.Min(frameCount, ushort.MaxValue),
                 intervalMilliseconds = intervalMilliseconds,
                 elapsedMilliseconds = 0.0f
-            });
+            };
+
+            this.SetMapTextureAnimationPosition(gameObject.transform, activeInitialSpriteFrame.frameInfo, animation);
+            this.mapTextureAnimations.Add(animation);
         }
         private void Command_RemoveGridDestroyGameObjects(List<UnityEngine.GameObject> _gameObjects)
         {

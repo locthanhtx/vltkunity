@@ -937,7 +937,7 @@ namespace game.resource.map
         private Textures.Command.AddNewTexture CreateAddTextureCommand(map.Element.Texture asset, map.Position.Grid gridPosition, int orderNumber)
         {
             string texturePath = DecodeTexturePath(asset.texturePathBuffer);
-            bool animated = BuildinAnimation.IsCandidate(asset);
+            bool animated = BuildinAnimation.IsCandidate(asset) || BuildinAnimation.IsMapAnimationTexturePath(texturePath);
 
             return new Textures.Command.AddNewTexture(
                 asset.type,
@@ -1293,22 +1293,41 @@ namespace game.resource.map
 
         public static bool IsCandidate(map.Element.Texture asset)
         {
-            return asset.type == map.Element.TextureType.groundObject
-                || asset.type == map.Element.TextureType.buildingUnder
-                || asset.type == map.Element.TextureType.buildingAbove
-                || asset.type == map.Element.TextureType.tree;
+            return IsCandidate(asset.type);
+        }
+
+        public static bool IsCandidate(int textureType)
+        {
+            return textureType == map.Element.TextureType.groundObject
+                || textureType == map.Element.TextureType.buildingUnder
+                || textureType == map.Element.TextureType.buildingAbove
+                || textureType == map.Element.TextureType.tree;
         }
 
         public static bool TryGet(string mapRootPath, map.Position.Sequential.Origin originPosition, map.Position.Grid gridPosition, int textureType, string texturePath, ushort textureFrame)
+        {
+            return TryGetInfo(mapRootPath, originPosition, gridPosition, textureType, texturePath, textureFrame, out _);
+        }
+
+        public static bool TryGetInfo(
+            string mapRootPath,
+            map.Position.Sequential.Origin originPosition,
+            map.Position.Grid gridPosition,
+            int textureType,
+            string texturePath,
+            ushort textureFrame,
+            out AnimationObjectInfo animationInfo)
         {
             if (textureType != map.Element.TextureType.groundObject
                 && textureType != map.Element.TextureType.buildingUnder
                 && textureType != map.Element.TextureType.buildingAbove
                 && textureType != map.Element.TextureType.tree)
             {
+                animationInfo = default;
                 return false;
             }
 
+            animationInfo = default;
             string normalizedTexturePath = NormalizeResourcePath(texturePath);
             if (normalizedTexturePath == string.Empty)
             {
@@ -1318,13 +1337,28 @@ namespace game.resource.map
             foreach (string regionPath in BuildRegionPathCandidates(mapRootPath, originPosition, gridPosition))
             {
                 RegionData regionData = GetRegionData(regionPath);
-                if (regionData.TryGetAnimatedObject(originPosition, textureFrame, normalizedTexturePath))
+                if (regionData.TryGetAnimatedObject(originPosition, textureFrame, normalizedTexturePath, out animationInfo))
                 {
+                    animationInfo.RegionPath = regionPath;
                     return true;
                 }
             }
 
             return false;
+        }
+
+        public static bool IsMapAnimationTexturePath(string texturePath)
+        {
+            if (string.IsNullOrWhiteSpace(texturePath))
+            {
+                return false;
+            }
+
+            string searchablePath = BuildResourcePathSearchText(texturePath);
+            return searchablePath.Contains("\\mapanimation\\")
+                || searchablePath.Contains("\\map_animation\\")
+                || searchablePath.Contains("\\maps\\animation\\")
+                || searchablePath.Contains("\\地图动画\\");
         }
 
         private static RegionData GetRegionData(string regionPath)
@@ -1521,6 +1555,7 @@ namespace game.resource.map
                 TexturePath = NormalizeResourcePath(texturePath),
                 Frame = frame,
                 FileFrameCount = frameCount,
+                AnimationSpeed = animationSpeed,
                 Animated = animationSpeed > 0,
                 ImgTop = ReadInt32(data, offset + 8),
                 ImgLeft = ReadInt32(data, offset + 4),
@@ -1612,6 +1647,41 @@ namespace game.resource.map
             return normalizedPath;
         }
 
+        private static string BuildResourcePathSearchText(string texturePath)
+        {
+            string normalizedPath = (texturePath ?? string.Empty)
+                .Replace('/', '\\')
+                .ToLowerInvariant();
+
+            Encoding cp1252 = GetOptionalEncoding(1252, Encoding.UTF8);
+            Encoding gbk = GetOptionalEncoding(936, cp1252);
+            string decodedPath = string.Empty;
+            try
+            {
+                decodedPath = gbk.GetString(cp1252.GetBytes(texturePath ?? string.Empty))
+                    .Replace('/', '\\')
+                    .ToLowerInvariant();
+            }
+            catch
+            {
+                decodedPath = string.Empty;
+            }
+
+            return normalizedPath + "\n" + decodedPath;
+        }
+
+        private static Encoding GetOptionalEncoding(int codePage, Encoding fallback)
+        {
+            try
+            {
+                return Encoding.GetEncoding(codePage);
+            }
+            catch
+            {
+                return fallback;
+            }
+        }
+
         private static string ReadFixedString(byte[] data, int offset, int maxLength)
         {
             int length = 0;
@@ -1658,19 +1728,21 @@ namespace game.resource.map
                 this.objectsByTexturePath[buildinObject.TexturePath].Add(buildinObject);
             }
 
-            public bool TryGetAnimatedObject(map.Position.Sequential.Origin originPosition, ushort textureFrame, string texturePath)
+            public bool TryGetAnimatedObject(
+                map.Position.Sequential.Origin originPosition,
+                ushort textureFrame,
+                string texturePath,
+                out AnimationObjectInfo animationInfo)
             {
+                animationInfo = default;
                 if (this.objectsByTexturePath.TryGetValue(texturePath, out List<BuildinObject> objects) == false)
                 {
                     return false;
                 }
 
-                if (objects.Count > 0)
-                {
-                    return true;
-                }
-
                 int bestScore = int.MaxValue;
+                BuildinObject bestObject = default;
+                bool found = false;
                 foreach (BuildinObject item in objects)
                 {
                     int score = item.GetPositionScore(originPosition);
@@ -1682,11 +1754,33 @@ namespace game.resource.map
                     if (score < bestScore)
                     {
                         bestScore = score;
+                        bestObject = item;
+                        found = true;
                     }
                 }
 
-                return bestScore <= PositionToleranceSquared;
+                if (found == false || bestScore > PositionToleranceSquared)
+                {
+                    return false;
+                }
+
+                animationInfo = bestObject.ToAnimationObjectInfo(bestScore);
+                return true;
             }
+        }
+
+        public struct AnimationObjectInfo
+        {
+            public string TexturePath;
+            public string RegionPath;
+            public ushort Frame;
+            public ushort FileFrameCount;
+            public ushort AnimationSpeed;
+            public int MatchScore;
+            public int ImgTop;
+            public int ImgLeft;
+            public int RefTop;
+            public int RefLeft;
         }
 
         private struct BuildinObject
@@ -1694,6 +1788,7 @@ namespace game.resource.map
             public string TexturePath;
             public ushort Frame;
             public ushort FileFrameCount;
+            public ushort AnimationSpeed;
             public bool Animated;
             public int ImgTop;
             public int ImgLeft;
@@ -1705,6 +1800,22 @@ namespace game.resource.map
                 int imgScore = SquaredDistance(originPosition.top, originPosition.left, this.ImgTop, this.ImgLeft);
                 int refScore = SquaredDistance(originPosition.top, originPosition.left, this.RefTop, this.RefLeft);
                 return Math.Min(imgScore, refScore);
+            }
+
+            public AnimationObjectInfo ToAnimationObjectInfo(int matchScore)
+            {
+                return new AnimationObjectInfo
+                {
+                    TexturePath = this.TexturePath,
+                    Frame = this.Frame,
+                    FileFrameCount = this.FileFrameCount,
+                    AnimationSpeed = this.AnimationSpeed,
+                    MatchScore = matchScore,
+                    ImgTop = this.ImgTop,
+                    ImgLeft = this.ImgLeft,
+                    RefTop = this.RefTop,
+                    RefLeft = this.RefLeft
+                };
             }
 
             private static int SquaredDistance(int topA, int leftA, int topB, int leftB)
