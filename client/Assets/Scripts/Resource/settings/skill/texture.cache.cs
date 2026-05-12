@@ -5,6 +5,58 @@ namespace game.resource.settings.skill.texture
 {
     public class SprCache
     {
+        ////////////////////////////////////////////////////////////////////////////////
+        // Main-thread decode budget
+        //
+        // Mỗi sprite tạo mới (per-frame Texture2D + Sprite.Create + Apply GPU) khá đắt.
+        // Khi nhiều NPC/player xuất hiện cùng lúc, hàng trăm part animation cùng touch
+        // SPR chưa decode → burst → spike frame 1-2 giây.
+        //
+        // Giải pháp: giới hạn số sprite tạo mới mỗi Unity frame. Cache hit trả nhanh
+        // bình thường; cache miss vượt budget → trả null, renderer giữ sprite cũ
+        // (Controller.Update skip null), frame sau retry.
+
+        /// <summary>Số sprite tối đa được decode + upload trong 1 Unity frame (0 = tắt throttle).</summary>
+        public static int MaxSpritesCreatedPerFrame = 8;
+
+        private static int budgetFrameMarker = -1;
+        private static int budgetUsedThisFrame = 0;
+
+        private static bool TryConsumeDecodeBudget()
+        {
+            if (MaxSpritesCreatedPerFrame <= 0)
+            {
+                return true;
+            }
+
+            int currentFrame;
+            try
+            {
+                currentFrame = UnityEngine.Time.frameCount;
+            }
+            catch
+            {
+                // Gọi ngoài main thread → không throttle để tránh deadlock
+                return true;
+            }
+
+            if (currentFrame != budgetFrameMarker)
+            {
+                budgetFrameMarker = currentFrame;
+                budgetUsedThisFrame = 0;
+            }
+
+            if (budgetUsedThisFrame >= MaxSpritesCreatedPerFrame)
+            {
+                return false;
+            }
+
+            budgetUsedThisFrame++;
+            return true;
+        }
+
+        ////////////////////////////////////////////////////////////////////////////////
+
         private static readonly HashSet<string> missingSprLogs = new HashSet<string>();
         private static readonly HashSet<string> frameFailureLogs = new HashSet<string>();
 
@@ -51,6 +103,13 @@ namespace game.resource.settings.skill.texture
                 return null;
             }
 
+            // Throttle: nếu hết budget trong Unity frame này, trả null.
+            // Renderer giữ sprite cũ (Controller.Update đã skip null), frame sau retry.
+            if (!TryConsumeDecodeBudget())
+            {
+                return null;
+            }
+
             resource.SPR.FrameInfo frameInfo = Game.Resource(sprPath).Get<resource.SPR.FrameInfo>(frameIndex);
 
             if(frameInfo == null
@@ -81,8 +140,14 @@ namespace game.resource.settings.skill.texture
                 return null;
             }
 
-            skill.texture.SprCache.Data.SprFrame sprFrame = new Data.SprFrame();
+            skill.texture.SprCache.Data.SprFrame sprFrame = BuildSprFrameLayout(sprInfo, frameInfo, sprite);
+            storage[sprPath].sprFrame[frameIndex] = sprFrame;
+            return sprFrame;
+        }
 
+        private static Data.SprFrame BuildSprFrameLayout(resource.SPR.Info sprInfo, resource.SPR.FrameInfo frameInfo, UnityEngine.Sprite sprite)
+        {
+            skill.texture.SprCache.Data.SprFrame sprFrame = new Data.SprFrame();
             sprFrame.sprite = sprite;
             sprFrame.sizeDelta = new UnityEngine.Vector2(frameInfo.width / 100.0f, frameInfo.height / 100.0f);
             sprFrame.anchoredPosition = new UnityEngine.Vector2();
@@ -99,8 +164,6 @@ namespace game.resource.settings.skill.texture
                 sprFrame.anchoredPosition.x -= 1.6f;
                 sprFrame.anchoredPosition.y += 1.92f;
             }
-
-            storage[sprPath].sprFrame[frameIndex] = sprFrame;
 
             return sprFrame;
         }
@@ -176,6 +239,24 @@ namespace game.resource.settings.skill.texture
 
                 return skill.texture.SprCache.CreateSprFrame(storage, sprPath, frameIndex);
             }
+        }
+
+        /// <summary>
+        /// Clear storage khi đổi map. Chỉ clear dictionary — KHÔNG destroy texture
+        /// ngay vì có thể có SpriteRenderer (vd: main player) còn tham chiếu.
+        /// Unity sẽ thu hồi qua Resources.UnloadUnusedAssets khi không còn ref.
+        /// </summary>
+        public static void DisposeStorage(Dictionary<string, skill.texture.SprCache.Data> storage)
+        {
+            if (storage == null) return;
+            foreach (KeyValuePair<string, Data> entry in storage)
+            {
+                if (entry.Value != null)
+                {
+                    entry.Value.sprFrame.Clear();
+                }
+            }
+            storage.Clear();
         }
     }
 

@@ -14,6 +14,8 @@ namespace game.network.jx
 {
     public sealed partial class JxClassicClient : IDisposable
     {
+        private static readonly bool EnableClassicNetworkVerboseLogs = false;
+
         private const byte CipherProtocolType = 0x20;
         private const byte C2SLogin = 65;
         private const byte C2SLoginFs = 66;
@@ -177,6 +179,9 @@ namespace game.network.jx
         private readonly HashSet<int> knownPlayerIds = new();
         private readonly Dictionary<int, int> requestedNpcTicks = new();
         private readonly Dictionary<int, int> knownPlayerMoveLogTicks = new();
+        private readonly Dictionary<int, ClassicWorldEvent> latestNpcNormalWorldEvents = new();
+        private readonly Dictionary<int, ClassicWorldEvent> latestPlayerNormalWorldEvents = new();
+        private readonly Dictionary<int, ClassicWorldEvent> latestPlayerPositionWorldEvents = new();
         private readonly HashSet<byte> loggedUnhandledWorldProtocols = new();
         private int lastWorldEventDropLogTick;
         private const int NpcRequestRetryMs = 450;
@@ -207,9 +212,15 @@ namespace game.network.jx
         {
             lock (worldEventLock)
             {
-                if (worldEvents.Count > 0)
+                while (worldEvents.Count > 0)
                 {
                     worldEvent = worldEvents.Dequeue();
+                    if (TryTakeLatestCoalescedWorldEvent(worldEvent, out ClassicWorldEvent latestWorldEvent))
+                    {
+                        worldEvent = latestWorldEvent;
+                        return true;
+                    }
+
                     return true;
                 }
             }
@@ -639,7 +650,7 @@ namespace game.network.jx
                 packetCount++;
             }
 
-            if (packetCount > 1)
+            if (EnableClassicNetworkVerboseLogs && packetCount > 1)
             {
                 Debug.Log("JxClassicClient split packet batch. first=" +
                           JxClassicProtocol.GetS2CName(firstProtocol) + "(" + firstProtocol + ")" +
@@ -1454,15 +1465,18 @@ namespace game.network.jx
                             Type = ClassicWorldEventType.WorldSync,
                             World = worldSync
                         });
-                        Debug.Log("JxClassicClient << world sync map=" + worldSync.SubWorld +
-                                  " region=" + worldSync.Region +
-                                  " sRegion=" + worldSync.SRegion +
-                                  " sRegionXY=" + worldSync.SRegionX + "," + worldSync.SRegionY +
-                                  " weather=" + worldSync.Weather +
-                                  " frame=" + worldSync.Frame +
-                                  " wpk=" + worldSync.WpkFlag +
-                                  " showLoop=" + worldSync.IsShowLoop +
-                                  " gameStat=" + worldSync.GameStat);
+                        if (EnableClassicNetworkVerboseLogs)
+                        {
+                            Debug.Log("JxClassicClient << world sync map=" + worldSync.SubWorld +
+                                      " region=" + worldSync.Region +
+                                      " sRegion=" + worldSync.SRegion +
+                                      " sRegionXY=" + worldSync.SRegionX + "," + worldSync.SRegionY +
+                                      " weather=" + worldSync.Weather +
+                                      " frame=" + worldSync.Frame +
+                                      " wpk=" + worldSync.WpkFlag +
+                                      " showLoop=" + worldSync.IsShowLoop +
+                                      " gameStat=" + worldSync.GameStat);
+                        }
                     }
                     break;
 
@@ -1475,14 +1489,17 @@ namespace game.network.jx
                             Type = ClassicWorldEventType.PlayerFullSync,
                             Player = fullPlayerSync
                         });
-                        Debug.Log("JxClassicClient << full player id=" + fullPlayerSync.Id +
-                                  " helm=" + fullPlayerSync.HelmType +
-                                  " armor=" + fullPlayerSync.ArmorType +
-                                  " weapon=" + fullPlayerSync.WeaponType +
-                                  " horse=" + fullPlayerSync.HorseType +
-                                  " figure=" + fullPlayerSync.Figure +
-                                  " tong=" + fullPlayerSync.TongName +
-                                  " title=" + fullPlayerSync.TongTitle);
+                        if (EnableClassicNetworkVerboseLogs)
+                        {
+                            Debug.Log("JxClassicClient << full player id=" + fullPlayerSync.Id +
+                                      " helm=" + fullPlayerSync.HelmType +
+                                      " armor=" + fullPlayerSync.ArmorType +
+                                      " weapon=" + fullPlayerSync.WeaponType +
+                                      " horse=" + fullPlayerSync.HorseType +
+                                      " figure=" + fullPlayerSync.Figure +
+                                      " tong=" + fullPlayerSync.TongName +
+                                      " title=" + fullPlayerSync.TongTitle);
+                        }
                         if (!IsFullNpcKnown(fullPlayerSync.Id) && ShouldRequestNpc(fullPlayerSync.Id))
                         {
                             await RequestNpcAsync(fullPlayerSync.Id);
@@ -1499,14 +1516,17 @@ namespace game.network.jx
                             Type = ClassicWorldEventType.PlayerNormalSync,
                             Player = normalPlayerSync
                         });
-                        Debug.Log("JxClassicClient << normal player id=" + normalPlayerSync.Id +
-                                  " helm=" + normalPlayerSync.HelmType +
-                                  " armor=" + normalPlayerSync.ArmorType +
-                                  " weapon=" + normalPlayerSync.WeaponType +
-                                  " horse=" + normalPlayerSync.HorseType +
-                                  " figure=" + normalPlayerSync.Figure +
-                                  " tong=" + normalPlayerSync.TongName +
-                                  " title=" + normalPlayerSync.TongTitle);
+                        if (EnableClassicNetworkVerboseLogs)
+                        {
+                            Debug.Log("JxClassicClient << normal player id=" + normalPlayerSync.Id +
+                                      " helm=" + normalPlayerSync.HelmType +
+                                      " armor=" + normalPlayerSync.ArmorType +
+                                      " weapon=" + normalPlayerSync.WeaponType +
+                                      " horse=" + normalPlayerSync.HorseType +
+                                      " figure=" + normalPlayerSync.Figure +
+                                      " tong=" + normalPlayerSync.TongName +
+                                      " title=" + normalPlayerSync.TongTitle);
+                        }
                         if (!IsFullNpcKnown(normalPlayerSync.Id) && ShouldRequestNpc(normalPlayerSync.Id))
                         {
                             await RequestNpcAsync(normalPlayerSync.Id);
@@ -1523,12 +1543,15 @@ namespace game.network.jx
                             Type = ClassicWorldEventType.NpcFullSync,
                             Npc = fullNpcSync
                         });
-                        Debug.Log("JxClassicClient << full npc id=" + fullNpcSync.Id +
-                                  " setting=" + fullNpcSync.NpcSettingIndex +
-                                  " kind=" + fullNpcSync.Kind +
-                                  " mapX=" + fullNpcSync.MapX +
-                                  " mapY=" + fullNpcSync.MapY +
-                                  " name=" + fullNpcSync.Name);
+                        if (EnableClassicNetworkVerboseLogs)
+                        {
+                            Debug.Log("JxClassicClient << full npc id=" + fullNpcSync.Id +
+                                      " setting=" + fullNpcSync.NpcSettingIndex +
+                                      " kind=" + fullNpcSync.Kind +
+                                      " mapX=" + fullNpcSync.MapX +
+                                      " mapY=" + fullNpcSync.MapY +
+                                      " name=" + fullNpcSync.Name);
+                        }
                     }
                     break;
 
@@ -1547,7 +1570,7 @@ namespace game.network.jx
                         }
 
                         bool isPlayerNpc = normalNpcSync.Kind == (byte)NPCKIND.kind_player && (hasFullNpc || hasPlayerData);
-                        if (isPlayerNpc)
+                        if (EnableClassicNetworkVerboseLogs && isPlayerNpc)
                         {
                             Debug.Log("JxClassicClient << normal player-npc id=" + normalNpcSync.Id +
                                       " kind=" + normalNpcSync.Kind +
@@ -1617,7 +1640,10 @@ namespace game.network.jx
                     if (TryParseNpcCommandSync(packet, (byte)NPCCMD.do_death, out ClassicNpcCommandSync deathSync))
                     {
                         ForgetNpcKnown(deathSync.Id);
-                        Debug.Log("JxClassicClient << npc death id=" + deathSync.Id);
+                        if (EnableClassicNetworkVerboseLogs)
+                        {
+                            Debug.Log("JxClassicClient << npc death id=" + deathSync.Id);
+                        }
                         EnqueueWorldEvent(new ClassicWorldEvent
                         {
                             Type = ClassicWorldEventType.ActorCommandSync,
@@ -1629,8 +1655,11 @@ namespace game.network.jx
                 case S2CPlayerRevive:
                     if (TryParseNpcReviveSync(packet, out ClassicNpcCommandSync reviveSync))
                     {
-                        Debug.Log("JxClassicClient << npc revive id=" + reviveSync.Id +
-                                  " type=" + reviveSync.CommandParam);
+                        if (EnableClassicNetworkVerboseLogs)
+                        {
+                            Debug.Log("JxClassicClient << npc revive id=" + reviveSync.Id +
+                                      " type=" + reviveSync.CommandParam);
+                        }
                         EnqueueWorldEvent(new ClassicWorldEvent
                         {
                             Type = ClassicWorldEventType.ActorCommandSync,
@@ -1670,8 +1699,11 @@ namespace game.network.jx
                         MarkPlayerKnown(playerMapId);
                         if (!IsFullNpcKnown(playerMapId) && ShouldRequestNpc(playerMapId))
                         {
-                            Debug.Log("JxClassicClient >> request npc from player map id=" + playerMapId +
-                                      " isInCity=" + isInCity);
+                            if (EnableClassicNetworkVerboseLogs)
+                            {
+                                Debug.Log("JxClassicClient >> request npc from player map id=" + playerMapId +
+                                          " isInCity=" + isInCity);
+                            }
                             await RequestNpcAsync(playerMapId);
                         }
                     }
@@ -2034,7 +2066,10 @@ namespace game.network.jx
         private async Task RequestNpcAsync(int id)
         {
             await SendPacketAsync(BuildRequestNpcPacket(id));
-            Debug.Log("JxClassicClient >> request npc id=" + id);
+            if (EnableClassicNetworkVerboseLogs)
+            {
+                Debug.Log("JxClassicClient >> request npc id=" + id);
+            }
         }
 
         public void RevalidateNpc(int id)
@@ -2083,17 +2118,25 @@ namespace game.network.jx
                 return;
             }
 
-            Debug.Log("JxClassicClient >> request npc from position id=" + sync.Id +
-                      " protocol=" + JxClassicProtocol.GetS2CName(protocol) + "(" + protocol + ")" +
-                      " mapX=" + sync.MapX +
-                      " mapY=" + sync.MapY +
-                      " running=" + sync.IsRunning +
-                      " standing=" + sync.IsStanding);
+            if (EnableClassicNetworkVerboseLogs)
+            {
+                Debug.Log("JxClassicClient >> request npc from position id=" + sync.Id +
+                          " protocol=" + JxClassicProtocol.GetS2CName(protocol) + "(" + protocol + ")" +
+                          " mapX=" + sync.MapX +
+                          " mapY=" + sync.MapY +
+                          " running=" + sync.IsRunning +
+                          " standing=" + sync.IsStanding);
+            }
             await RequestNpcAsync(sync.Id);
         }
 
         private void DebugKnownPlayerMoveSync(ClassicNpcPositionSync sync, byte protocol)
         {
+            if (!EnableClassicNetworkVerboseLogs)
+            {
+                return;
+            }
+
             if (sync == null || sync.Id <= 0 || sync.Id == currentPlayerId)
             {
                 return;
@@ -2198,13 +2241,171 @@ namespace game.network.jx
 
             lock (worldEventLock)
             {
+                if (TryUpdateExistingCoalescedWorldEvent(worldEvent))
+                {
+                    return;
+                }
+
                 if (worldEvents.Count >= MaxQueuedWorldEvents && !MakeRoomForWorldEvent(worldEvent))
                 {
                     LogWorldEventDrop(worldEvent, "new");
                     return;
                 }
 
+                RegisterNewCoalescedWorldEvent(worldEvent);
                 worldEvents.Enqueue(worldEvent);
+            }
+        }
+
+        private bool TryUpdateExistingCoalescedWorldEvent(ClassicWorldEvent worldEvent)
+        {
+            if (worldEvent == null)
+            {
+                return true;
+            }
+
+            switch (worldEvent.Type)
+            {
+                case ClassicWorldEventType.NpcNormalSync:
+                    if (worldEvent.Npc != null && worldEvent.Npc.Id > 0)
+                    {
+                        if (latestNpcNormalWorldEvents.ContainsKey(worldEvent.Npc.Id))
+                        {
+                            latestNpcNormalWorldEvents[worldEvent.Npc.Id] = worldEvent;
+                            return true;
+                        }
+                    }
+                    break;
+
+                case ClassicWorldEventType.PlayerNormalSync:
+                    if (worldEvent.Player != null && worldEvent.Player.Id > 0)
+                    {
+                        if (latestPlayerNormalWorldEvents.ContainsKey(worldEvent.Player.Id))
+                        {
+                            latestPlayerNormalWorldEvents[worldEvent.Player.Id] = worldEvent;
+                            return true;
+                        }
+                    }
+                    break;
+
+                case ClassicWorldEventType.PlayerPositionSync:
+                    if (worldEvent.Position != null && worldEvent.Position.Id > 0)
+                    {
+                        if (latestPlayerPositionWorldEvents.ContainsKey(worldEvent.Position.Id))
+                        {
+                            latestPlayerPositionWorldEvents[worldEvent.Position.Id] = worldEvent;
+                            return true;
+                        }
+                    }
+                    break;
+            }
+
+            return false;
+        }
+
+        private void RegisterNewCoalescedWorldEvent(ClassicWorldEvent worldEvent)
+        {
+            if (worldEvent == null)
+            {
+                return;
+            }
+
+            switch (worldEvent.Type)
+            {
+                case ClassicWorldEventType.NpcNormalSync:
+                    if (worldEvent.Npc != null && worldEvent.Npc.Id > 0)
+                    {
+                        latestNpcNormalWorldEvents[worldEvent.Npc.Id] = worldEvent;
+                    }
+                    break;
+
+                case ClassicWorldEventType.PlayerNormalSync:
+                    if (worldEvent.Player != null && worldEvent.Player.Id > 0)
+                    {
+                        latestPlayerNormalWorldEvents[worldEvent.Player.Id] = worldEvent;
+                    }
+                    break;
+
+                case ClassicWorldEventType.PlayerPositionSync:
+                    if (worldEvent.Position != null && worldEvent.Position.Id > 0)
+                    {
+                        latestPlayerPositionWorldEvents[worldEvent.Position.Id] = worldEvent;
+                    }
+                    break;
+            }
+        }
+
+        private bool TryTakeLatestCoalescedWorldEvent(ClassicWorldEvent markerEvent, out ClassicWorldEvent latestWorldEvent)
+        {
+            latestWorldEvent = null;
+
+            if (markerEvent == null)
+            {
+                return false;
+            }
+
+            switch (markerEvent.Type)
+            {
+                case ClassicWorldEventType.NpcNormalSync:
+                    if (markerEvent.Npc != null
+                        && latestNpcNormalWorldEvents.TryGetValue(markerEvent.Npc.Id, out latestWorldEvent))
+                    {
+                        latestNpcNormalWorldEvents.Remove(markerEvent.Npc.Id);
+                        return true;
+                    }
+                    break;
+
+                case ClassicWorldEventType.PlayerNormalSync:
+                    if (markerEvent.Player != null
+                        && latestPlayerNormalWorldEvents.TryGetValue(markerEvent.Player.Id, out latestWorldEvent))
+                    {
+                        latestPlayerNormalWorldEvents.Remove(markerEvent.Player.Id);
+                        return true;
+                    }
+                    break;
+
+                case ClassicWorldEventType.PlayerPositionSync:
+                    if (markerEvent.Position != null
+                        && latestPlayerPositionWorldEvents.TryGetValue(markerEvent.Position.Id, out latestWorldEvent))
+                    {
+                        latestPlayerPositionWorldEvents.Remove(markerEvent.Position.Id);
+                        return true;
+                    }
+                    break;
+            }
+
+            return false;
+        }
+
+        private void ClearCoalescedWorldEventRegistration(ClassicWorldEvent worldEvent)
+        {
+            if (worldEvent == null)
+            {
+                return;
+            }
+
+            switch (worldEvent.Type)
+            {
+                case ClassicWorldEventType.NpcNormalSync:
+                    if (worldEvent.Npc != null)
+                    {
+                        latestNpcNormalWorldEvents.Remove(worldEvent.Npc.Id);
+                    }
+                    break;
+
+                case ClassicWorldEventType.PlayerNormalSync:
+                    if (worldEvent.Player != null)
+                    {
+                        latestPlayerNormalWorldEvents.Remove(worldEvent.Player.Id);
+                    }
+                    break;
+
+                case ClassicWorldEventType.PlayerPositionSync:
+                    if (worldEvent.Position != null)
+                    {
+                        latestPlayerPositionWorldEvents.Remove(worldEvent.Position.Id);
+                    }
+                    break;
             }
         }
 
@@ -2223,6 +2424,7 @@ namespace game.network.jx
             if (IsCriticalWorldEvent(nextEvent))
             {
                 ClassicWorldEvent dropped = worldEvents.Dequeue();
+                ClearCoalescedWorldEventRegistration(dropped);
                 LogWorldEventDrop(dropped, "old-critical-pressure");
                 return true;
             }
@@ -2241,6 +2443,7 @@ namespace game.network.jx
                 if (!dropped && IsDroppableWorldEvent(queued))
                 {
                     dropped = true;
+                    ClearCoalescedWorldEventRegistration(queued);
                     LogWorldEventDrop(queued, "old-droppable");
                     continue;
                 }
@@ -4281,6 +4484,9 @@ namespace game.network.jx
             lock (worldEventLock)
             {
                 worldEvents.Clear();
+                latestNpcNormalWorldEvents.Clear();
+                latestPlayerNormalWorldEvents.Clear();
+                latestPlayerPositionWorldEvents.Clear();
             }
 
             decodedPackets.Clear();

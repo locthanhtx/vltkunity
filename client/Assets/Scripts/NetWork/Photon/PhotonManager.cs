@@ -38,6 +38,9 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
     private const int ClassicAttackRadiusOffset = 50;
     private const int ClassicMinAttackReadyRadius = 32;
     private const int ClassicDefaultDeathFrame = 15;
+    private const int ClassicMaxWorldEventsPerUpdate = 150;
+    private const double ClassicMaxWorldEventMilliseconds = 5.0;
+    private static readonly bool ClassicVerboseLogs = false;
     private const int ClassicRangeWeaponEqtOffset = 100;
     private const int ClassicWeaponEquipPart = 3;
     private const int ClassicMeleeWeaponHandParticular = 6;
@@ -354,7 +357,11 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         }
 
         int processed = 0;
-        while (processed++ < 128 && ClassicClient.TryDequeueWorldEvent(out ClassicWorldEvent worldEvent))
+        long budgetStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+
+        while (processed < ClassicMaxWorldEventsPerUpdate
+               && GetElapsedMilliseconds(budgetStartTicks) < ClassicMaxWorldEventMilliseconds
+               && ClassicClient.TryDequeueWorldEvent(out ClassicWorldEvent worldEvent))
         {
             try
             {
@@ -463,7 +470,14 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
                 Debug.LogWarning("JxClassicClient world event skipped. type=" + worldEvent.Type +
                                  " error=" + exception.Message);
             }
+
+            processed++;
         }
+    }
+
+    private static double GetElapsedMilliseconds(long startTicks)
+    {
+        return (System.Diagnostics.Stopwatch.GetTimestamp() - startTicks) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
     }
 
     private void ApplyClassicCurrentPlayerSync(ClassicCurrentPlayerSync sync)
@@ -927,7 +941,7 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
                 PlayerClick player = EnsureClassicPlayerSpawned(sync, direction, false);
                 ApplyClassicPlayerRuntimeState(player, sync, direction);
                 ApplyPendingClassicPlayerSync(sync.Id);
-                if (!hadPlayer)
+                if (ClassicVerboseLogs && !hadPlayer)
                 {
                     Debug.Log("JxClassicClient spawned player from npc min id=" + sync.Id +
                               " mapX=" + sync.MapX +
@@ -966,12 +980,15 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
             ApplyClassicPlayerRuntimeState(player, sync, direction);
 
             ApplyPendingClassicPlayerSync(sync.Id);
-            Debug.Log("JxClassicClient spawned player id=" + sync.Id +
-                      " setting=" + sync.NpcSettingIndex +
-                      " mapX=" + sync.MapX +
-                      " mapY=" + sync.MapY +
-                      " name=" + sync.Name +
-                      " hasPlayerObject=" + (player != null));
+            if (ClassicVerboseLogs)
+            {
+                Debug.Log("JxClassicClient spawned player id=" + sync.Id +
+                          " setting=" + sync.NpcSettingIndex +
+                          " mapX=" + sync.MapX +
+                          " mapY=" + sync.MapY +
+                          " name=" + sync.Name +
+                          " hasPlayerObject=" + (player != null));
+            }
             return;
         }
 
@@ -1016,14 +1033,17 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
 
         ApplyClassicNpcRuntimeState(npc, sync, direction);
         JxClassicMovement.EnsureBaseSpeed(npc.GetController());
-        Debug.Log("JxClassicClient spawned npc id=" + sync.Id +
-                  " setting=" + sync.NpcSettingIndex +
-                  " npcType=" + npcType +
-                  " kind=" + sync.Kind +
-                  " life=" + hpCur + "/" + hpMax +
-                  " mapX=" + sync.MapX +
-                  " mapY=" + sync.MapY +
-                  " name=" + sync.Name);
+        if (ClassicVerboseLogs)
+        {
+            Debug.Log("JxClassicClient spawned npc id=" + sync.Id +
+                      " setting=" + sync.NpcSettingIndex +
+                      " npcType=" + npcType +
+                      " kind=" + sync.Kind +
+                      " life=" + hpCur + "/" + hpMax +
+                      " mapX=" + sync.MapX +
+                      " mapY=" + sync.MapY +
+                      " name=" + sync.Name);
+        }
     }
 
     private int ResolveClassicNpcType(ClassicNpcSync sync)
@@ -1219,13 +1239,16 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         if (player == null || player.controller == null)
         {
             pendingClassicPlayerSyncs[sync.Id] = sync;
-            Debug.Log("JxClassicClient deferred player sync. id=" + sync.Id +
-                      " helm=" + sync.HelmType +
-                      " armor=" + sync.ArmorType +
-                      " weapon=" + sync.WeaponType +
-                      " horse=" + sync.HorseType +
-                      " walkSpeed=" + sync.WalkSpeed +
-                      " runSpeed=" + sync.RunSpeed);
+            if (ClassicVerboseLogs)
+            {
+                Debug.Log("JxClassicClient deferred player sync. id=" + sync.Id +
+                          " helm=" + sync.HelmType +
+                          " armor=" + sync.ArmorType +
+                          " weapon=" + sync.WeaponType +
+                          " horse=" + sync.HorseType +
+                          " walkSpeed=" + sync.WalkSpeed +
+                          " runSpeed=" + sync.RunSpeed);
+            }
             return;
         }
 
@@ -1244,17 +1267,20 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
             ClassicMainPlayerExBoxId = sync.ExBoxId;
         }
 
-        Debug.Log("JxClassicClient applied player sync. id=" + sync.Id +
-                  " helm=" + sync.HelmType +
-                  " armor=" + sync.ArmorType +
-                  " weapon=" + sync.WeaponType +
-                  " horse=" + sync.HorseType +
-                  " walkSpeed=" + sync.WalkSpeed +
-                  " runSpeed=" + sync.RunSpeed +
-                  " figure=" + sync.Figure +
-                  " tong=" + sync.TongName +
-                  " title=" + sync.TongTitle +
-                  " flags=0x" + sync.Flags.ToString("X2"));
+        if (ClassicVerboseLogs)
+        {
+            Debug.Log("JxClassicClient applied player sync. id=" + sync.Id +
+                      " helm=" + sync.HelmType +
+                      " armor=" + sync.ArmorType +
+                      " weapon=" + sync.WeaponType +
+                      " horse=" + sync.HorseType +
+                      " walkSpeed=" + sync.WalkSpeed +
+                      " runSpeed=" + sync.RunSpeed +
+                      " figure=" + sync.Figure +
+                      " tong=" + sync.TongName +
+                      " title=" + sync.TongTitle +
+                      " flags=0x" + sync.Flags.ToString("X2"));
+        }
     }
 
     private bool IsClassicMainPlayerNpc(ClassicNpcSync sync)
@@ -1447,7 +1473,7 @@ public class PhotonManager : MonoBehaviour, IPhotonPeerListener
         int oldLife = npc.CurrentHPCur;
         int newLife = Math.Max(0, sync.CurrentLife);
         npc.CurrentHPCur = newLife;
-        if (oldLife != newLife)
+        if (ClassicVerboseLogs && oldLife != newLife)
         {
             Debug.Log("JxClassicClient << npc hp id=" + npc.Id +
                       " old=" + oldLife +

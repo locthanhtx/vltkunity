@@ -26,7 +26,6 @@ namespace game.resource.settings.skill.texture
                 UnityEngine.Debug.LogWarning("Skill SPR update failed: " + this.spr.path +
                                              " frame=" + this.spr.frameIndex +
                                              " error=" + exception.GetBaseException().Message);
-                this.appearance.spriteRendererComponent.sprite = null;
                 return;
             }
 
@@ -39,7 +38,6 @@ namespace game.resource.settings.skill.texture
                         "SkillProbe texture-update no-frame path=" + this.spr.path +
                         " frame=" + this.spr.frameIndex);
                 }
-                this.appearance.spriteRendererComponent.sprite = null;
                 return;
             }
 

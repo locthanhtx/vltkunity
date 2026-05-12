@@ -108,23 +108,33 @@ namespace game.resource.settings.npcres
 
         public npcres.Shape.PartFrame GetPartFrame(string _partName, ushort _frameIndex, game.resource.settings.npcres.Structures.PartAnimation _partAnimation)
         {
-            if (this.partFrame.ContainsKey(_partName) == false) this.partFrame[_partName] = new Dictionary<int, PartFrame>();
-            if (this.partFrame[_partName].ContainsKey(_frameIndex) == false) this.partFrame[_partName][_frameIndex] = new PartFrame();
-
-            npcres.Shape.PartFrame updatePartFrame = this.partFrame[_partName][_frameIndex];
-
-            if (updatePartFrame.isValid)
+            if (this.partFrame.TryGetValue(_partName, out Dictionary<int, PartFrame> frameByIndex) == false)
             {
-                return updatePartFrame;
+                frameByIndex = new Dictionary<int, PartFrame>();
+                this.partFrame[_partName] = frameByIndex;
+            }
+
+            if (frameByIndex.TryGetValue(_frameIndex, out npcres.Shape.PartFrame cachedPartFrame)
+                && cachedPartFrame.isValid)
+            {
+                return cachedPartFrame;
             }
 
             settings.skill.texture.SprCache.Data.SprFrame sprFrame = npcres.Cache.GetSprFrame(_partAnimation.sprPath, _frameIndex);
-            if (sprFrame != null)
+            if (sprFrame == null || sprFrame.sprite == null)
             {
-                updatePartFrame.sprite = sprFrame.sprite;
-                updatePartFrame.sizeDelta = sprFrame.sizeDelta;
-                updatePartFrame.anchoredPosition = sprFrame.anchoredPosition;
-                updatePartFrame.isValid = true;
+                return null;
+            }
+
+            npcres.Shape.PartFrame updatePartFrame = cachedPartFrame ?? new PartFrame();
+            updatePartFrame.sprite = sprFrame.sprite;
+            updatePartFrame.sizeDelta = sprFrame.sizeDelta;
+            updatePartFrame.anchoredPosition = sprFrame.anchoredPosition;
+            updatePartFrame.isValid = true;
+
+            if (cachedPartFrame == null)
+            {
+                frameByIndex[_frameIndex] = updatePartFrame;
             }
 
             return updatePartFrame;

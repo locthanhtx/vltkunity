@@ -167,7 +167,6 @@ namespace game.resource.settings.npcres.state
 
             if (sprFrame == null)
             {
-                this.spriteRendererComponent.sprite = null;
                 return;
             }
 

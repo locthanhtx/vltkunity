@@ -83,6 +83,13 @@ namespace game.resource
             }
 
             this.info = newMapInfo;
+
+            // Eviction SPR cache: đổi map → phần lớn SPR ở map cũ không dùng nữa.
+            // Tránh bloat memory/GC theo thời gian chơi. Chỉ clear dict;
+            // Unity thu hồi Texture2D khi không còn SpriteRenderer reference.
+            settings.skill.texture.SprCache.DisposeStorage(resource.Cache.Settings.NpcRes.textures);
+            settings.skill.texture.SprCache.DisposeStorage(resource.Cache.Settings.Skill.textures);
+
             this.preparingCommand.Reset(this.textureConfig, this.info, clearMaptextures: true, clearSpecialNpc: true, clearNormalNpc: true);
             this.location = new map.Location(this.info);
             this.miniMap.Reset(this.info);

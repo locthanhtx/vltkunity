@@ -8,6 +8,7 @@ namespace game.resource.map
     class Textures
     {
         private static readonly bool EnableLocalSkillSpriteRendering = true;
+        private static int MaxMapSpritesCreatedPerFrame = 6;
 
         public class Command
         {
@@ -331,7 +332,10 @@ namespace game.resource.map
         private readonly List<MapTextureAnimation> mapTextureAnimations;
         private readonly HashSet<int> skippedSkillSpriteRenderLogs;
         private readonly HashSet<string> skillSpriteProbeLogs;
+        private readonly HashSet<string> mapSpriteFailureLogs;
         private int progressingMillisecondsInCycle;
+        private int mapSpriteBudgetFrameMarker;
+        private int mapSpritesCreatedThisFrame;
 
         private readonly Dictionary<settings.objres.Controller, bool> objs;
 
@@ -350,7 +354,10 @@ namespace game.resource.map
             this.mapTextureAnimations = new List<MapTextureAnimation>();
             this.skippedSkillSpriteRenderLogs = new HashSet<int>();
             this.skillSpriteProbeLogs = new HashSet<string>();
+            this.mapSpriteFailureLogs = new HashSet<string>();
             this.progressingMillisecondsInCycle = (int)((1.0f / 60) * 1000);
+            this.mapSpriteBudgetFrameMarker = -1;
+            this.mapSpritesCreatedThisFrame = 0;
 
             this.objs = new Dictionary<settings.objres.Controller, bool>();
         }
@@ -569,6 +576,7 @@ namespace game.resource.map
             int commandRemaining = 0;
             long millisecondsRemaining = this.progressingMillisecondsInCycle;
             Textures.Command.Element command = null;
+            bool commandCompleted = true;
 
             lock (this.commandQueue)
             {
@@ -581,8 +589,15 @@ namespace game.resource.map
 
                 lock (this.commandQueue)
                 {
-                    command = this.commandQueue.Dequeue();
+                    if (this.commandQueue.Count <= 0)
+                    {
+                        break;
+                    }
+
+                    command = this.commandQueue.Peek();
                 }
+
+                commandCompleted = true;
 
                 switch (command.commandID)
                 {
@@ -591,7 +606,7 @@ namespace game.resource.map
                         break;
 
                     case Textures.Command.ID.addNewTexture:
-                        this.Command_AddNewTexture((Textures.Command.AddNewTexture)command);
+                        commandCompleted = this.Command_AddNewTexture((Textures.Command.AddNewTexture)command);
                         break;
 
                     case Textures.Command.ID.removeGrid:
@@ -656,6 +671,20 @@ namespace game.resource.map
 
                 performance.Stop();
                 millisecondsRemaining -= performance.ElapsedMilliseconds;
+
+                if (commandCompleted == false)
+                {
+                    break;
+                }
+
+                lock (this.commandQueue)
+                {
+                    if (this.commandQueue.Count > 0
+                        && object.ReferenceEquals(this.commandQueue.Peek(), command))
+                    {
+                        this.commandQueue.Dequeue();
+                    }
+                }
             }
         }
 
@@ -717,8 +746,40 @@ namespace game.resource.map
             }
         }
 
-        private Textures.SpriteFrameCache Command_AddNewTexture_GetSpriteFrame(Textures.Command.AddNewTexture _newTexture)
+        private bool TryConsumeMapSpriteDecodeBudget()
         {
+            if (MaxMapSpritesCreatedPerFrame <= 0)
+            {
+                return true;
+            }
+
+            int currentFrame = UnityEngine.Time.frameCount;
+            if (currentFrame != this.mapSpriteBudgetFrameMarker)
+            {
+                this.mapSpriteBudgetFrameMarker = currentFrame;
+                this.mapSpritesCreatedThisFrame = 0;
+            }
+
+            if (this.mapSpritesCreatedThisFrame >= MaxMapSpritesCreatedPerFrame)
+            {
+                return false;
+            }
+
+            this.mapSpritesCreatedThisFrame++;
+            return true;
+        }
+
+        private void LogMapSpriteFailure(string key, string message)
+        {
+            if (this.mapSpriteFailureLogs.Add(key))
+            {
+                UnityEngine.Debug.LogWarning(message);
+            }
+        }
+
+        private Textures.SpriteFrameCache Command_AddNewTexture_GetSpriteFrame(Textures.Command.AddNewTexture _newTexture, out bool retryLater)
+        {
+            retryLater = false;
             Textures.SpriteFrameCache spriteFrame = null;
             Dictionary<string, Dictionary<ushort, SpriteFrameCache>> spriteStorage = null;
 
@@ -791,9 +852,30 @@ namespace game.resource.map
                 return spriteFrame;
             }
 
+            if (this.TryConsumeMapSpriteDecodeBudget() == false)
+            {
+                retryLater = true;
+                return null;
+            }
+
             spriteFrame = new Textures.SpriteFrameCache();
             spriteFrame.frameInfo = Game.Resource(_newTexture.texturePath).Get<game.resource.SPR.FrameInfo>(_newTexture.textureFrame);
+            if (spriteFrame.frameInfo == null || spriteFrame.frameInfo.width <= 0)
+            {
+                this.LogMapSpriteFailure(
+                    _newTexture.texturePath + "#" + _newTexture.textureFrame + ":info",
+                    "Map SPR frame missing path=" + _newTexture.texturePath + " frame=" + _newTexture.textureFrame);
+                return null;
+            }
+
             spriteFrame.frameSprite = Game.Resource(_newTexture.texturePath).Get<UnityEngine.Sprite>(spriteFrame.frameInfo);
+            if (spriteFrame.frameSprite == null)
+            {
+                this.LogMapSpriteFailure(
+                    _newTexture.texturePath + "#" + _newTexture.textureFrame + ":sprite",
+                    "Map SPR sprite missing path=" + _newTexture.texturePath + " frame=" + _newTexture.textureFrame);
+                return null;
+            }
 
             if (spriteStorage != null)
             {
@@ -817,12 +899,28 @@ namespace game.resource.map
                 return spriteStorage[texturePath][textureFrame];
             }
 
+            if (this.TryConsumeMapSpriteDecodeBudget() == false)
+            {
+                return null;
+            }
+
             Textures.SpriteFrameCache spriteFrame = new Textures.SpriteFrameCache();
             spriteFrame.frameInfo = Game.Resource(texturePath).Get<game.resource.SPR.FrameInfo>(textureFrame);
+            if (spriteFrame.frameInfo == null || spriteFrame.frameInfo.width <= 0)
+            {
+                this.LogMapSpriteFailure(
+                    texturePath + "#" + textureFrame + ":animation-info",
+                    "Map animation SPR frame missing path=" + texturePath + " frame=" + textureFrame);
+                return null;
+            }
+
             spriteFrame.frameSprite = Game.Resource(texturePath).Get<UnityEngine.Sprite>(spriteFrame.frameInfo);
 
-            if (spriteFrame.frameInfo == null || spriteFrame.frameSprite == null)
+            if (spriteFrame.frameSprite == null)
             {
+                this.LogMapSpriteFailure(
+                    texturePath + "#" + textureFrame + ":animation-sprite",
+                    "Map animation SPR sprite missing path=" + texturePath + " frame=" + textureFrame);
                 return null;
             }
 
@@ -843,11 +941,17 @@ namespace game.resource.map
             );
         }
 
-        private void Command_AddNewTexture(Textures.Command.AddNewTexture _newTexture)
+        private bool Command_AddNewTexture(Textures.Command.AddNewTexture _newTexture)
         {
+            bool retryLater;
+            Textures.SpriteFrameCache spriteFrame = this.Command_AddNewTexture_GetSpriteFrame(_newTexture, out retryLater);
+            if (spriteFrame == null || spriteFrame.frameInfo == null || spriteFrame.frameSprite == null)
+            {
+                return retryLater == false;
+            }
+
             UnityEngine.GameObject newGameObject = new UnityEngine.GameObject(_newTexture.gameObjectName);
             UnityEngine.SpriteRenderer newSpriteRenderer = newGameObject.AddComponent<UnityEngine.SpriteRenderer>();
-            Textures.SpriteFrameCache spriteFrame = this.Command_AddNewTexture_GetSpriteFrame(_newTexture);
 
             newSpriteRenderer.sprite = spriteFrame.frameSprite;
             newSpriteRenderer.sortingOrder = _newTexture.order;
@@ -892,6 +996,7 @@ namespace game.resource.map
             this.ownedByGrid[gridPosition.gridTop][gridPosition.gridLeft].Add(newGameObject);
 
             this.Command_AddNewTexture_Animation(_newTexture, newGameObject, newSpriteRenderer);
+            return true;
         }
 
         private void Command_AddNewTexture_Animation(Textures.Command.AddNewTexture _newTexture, UnityEngine.GameObject gameObject, UnityEngine.SpriteRenderer spriteRenderer)

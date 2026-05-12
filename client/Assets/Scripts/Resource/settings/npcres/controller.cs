@@ -160,6 +160,13 @@ namespace game.resource.settings.npcres
                 npcres.Shape.PartFields part = this.shape.GetPartFields(partPair.Key);
                 npcres.Shape.PartFrame frameData = this.shape.GetPartFrame(partPair.Key, currentFrameIndex, partPair.Value);
 
+                // Frame có thể chưa decode xong (SprCache throttle). Giữ sprite cũ,
+                // Shape.GetPartFrame đã xóa entry bad khỏi partFrame cache → frame sau retry.
+                if (frameData == null || frameData.sprite == null)
+                {
+                    continue;
+                }
+
                 if (part.spriteRenderer.sprite == frameData.sprite)
                 {
                     continue;
